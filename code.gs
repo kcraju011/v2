@@ -578,6 +578,7 @@ function getCurrentAutoSession(now) {
 }
 
 function getRoleDirectory() {
+  ensureDefaultLookupRows();
   var rows = getCached(SH.ROLES, TTL_LOOKUP);
   var byId = {};
   var byName = {};
@@ -588,6 +589,18 @@ function getRoleDirectory() {
     if (name) byName[name] = id;
   });
   return { byId: byId, byName: byName };
+}
+
+function ensureDefaultLookupRows() {
+  var roles = getCached(SH.ROLES, TTL_LOOKUP);
+  if (!roles || !roles.length) {
+    ensureExactRows('Roles', [
+      [1, 'admin'],
+      [2, 'teacher'],
+      [3, 'student'],
+      [4, 'employee']
+    ]);
+  }
 }
 
 function normalizeRoleValue(roleValue) {
@@ -604,6 +617,14 @@ function findRoleIdByName(roleName) {
   var raw = String(roleName || '').trim().toLowerCase();
   if (!raw) return '';
   return getRoleDirectory().byName[raw] || '';
+}
+
+function resolveRoleId(roleValue) {
+  var raw = String(roleValue || '').trim();
+  if (!raw) return '';
+  var roles = getRoleDirectory();
+  if (roles.byId[raw]) return raw;
+  return roles.byName[raw.toLowerCase()] || '';
 }
 
 function ensureExactRows(sheetName, rows) {
@@ -656,13 +677,7 @@ function hasDepartment(departmentId) {
 }
 
 function hasRole(roleId) {
-  var raw = String(roleId || '').trim();
-  if (!raw) return false;
-  var rows = getCached(SH.ROLES, TTL_LOOKUP);
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i].role_id) === raw) return true;
-  }
-  return false;
+  return !!resolveRoleId(roleId);
 }
 
 function getWindowsConfig() {
@@ -804,10 +819,9 @@ function registerUser(b) {
       return { success: false, message: 'name, email, password and roleId are required' };
     if (!isValidEmail(b.email))
       return { success: false, message: 'Valid email required' };
-    if (!hasRole(b.roleId))
+    var resolvedRoleId = resolveRoleId(b.roleId);
+    if (!resolvedRoleId)
       return { success: false, message: 'Invalid role selected' };
-    if (b.departmentId && !hasDepartment(b.departmentId))
-      return { success: false, message: 'Invalid department selected' };
     if (String(b.password || '').length < 8)
       return { success: false, message: 'Password must be at least 8 characters' };
     if (!isValidMobile(b.mobile))
@@ -821,7 +835,8 @@ function registerUser(b) {
     try {
       // ── Numeric user_id ──
       var userId = nextId(SH.USERS);
-      var roleId = String(b.roleId).trim();
+      var roleId = String(resolvedRoleId).trim();
+      var departmentId = toCleanText(b.departmentId || '', 120);
 
       // Default location: first row of AttendanceLocations (id = 1)
       var defaultLoc = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP)[0];
@@ -830,10 +845,10 @@ function registerUser(b) {
       var instituteName = tenant && tenant.institution ? tenant.institution.name : 'BioAttend Organization';
 
       getSheet(SH.USERS).appendRow([
-        userId,                        // user_id  (integer)
+        userId,
         toCleanText(b.instituteId || instituteName, 120),
-        b.departmentId ? parseInt(b.departmentId, 10) : '',  // numeric dept id
-        parseInt(roleId, 10),          // numeric role id
+        departmentId,
+        parseInt(roleId, 10),
         toCleanText(b.name, 120),
         b.dob     || '',
         toCleanText(b.mobile, 20),
@@ -860,7 +875,7 @@ function registerUser(b) {
       invalidate(SH.USERS);
       appendAuditLog('register_user', userId, normalizeRoleValue(roleId), userId, {
         email: String(b.email).toLowerCase(),
-        departmentId: b.departmentId || ''
+        departmentId: departmentId
       });
       return { success: true, userId: userId, message: 'Account created successfully' };
     } finally { lock.releaseLock(); }

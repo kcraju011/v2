@@ -729,34 +729,71 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
+// ── CONFIG ─────────────────────────────────────────────
 const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev';
+
 const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
-                   
+
 const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+
+// ── FALLBACK TENANTS (OFFLINE MODE) ─────────────────────
 const FALLBACK_TENANTS = {
+
   '1': {
     success: true,
     guid: '1',
     orgType: 'college',
-    institution: { name: 'BioAttend Main', city: 'Tumakuru', logoUrl: '', website: '', address: 'Main tenant workspace' },
-    application: { id: 101, name: 'Attendance monitoring', description: 'Multi-tenant biometric attendance monitoring' },
+    institution: {
+      name: 'BioAttend Main',
+      city: 'Tumakuru',
+      logoUrl: '',
+      website: '',
+      address: 'Main tenant workspace'
+    },
+    application: {
+      id: 101,
+      name: 'Attendance monitoring',
+      description: 'Multi-tenant biometric attendance monitoring'
+    },
     apiUrl: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev'
   },
-  
+
   '2': {
     success: true,
     guid: '2',
     orgType: 'college',
-    institution: { name: 'SIT', city: 'Tumakuru', logoUrl: 'https://web.sit.ac.in/wp-content/uploads/2025/03/SIT-Logo-1.png', website: '', address: 'Siddaganga Institute of Technology' },
-    application: { id: 102, name: 'Attendance monitoring', description: 'Biometric attendance for students, teachers and employees' },
+    institution: {
+      name: 'SIT',
+      city: 'Tumakuru',
+      logoUrl: 'https://web.sit.ac.in/wp-content/uploads/2025/03/SIT-Logo-1.png',
+      website: 'https://web.sit.ac.in/',
+      address: 'Siddaganga Institute of Technology'
+    },
+    application: {
+      id: 102,
+      name: 'Attendance monitoring',
+      description: 'Biometric attendance for students, teachers and employees'
+    },
     apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
+
   '3': {
     success: true,
     guid: '3',
     orgType: 'college',
-    institution: { name: 'SSIT', city: 'Tumakuru', logoUrl: 'https://ssit.edu.in/img/ssit-logo.png', website: '', address: 'Sri Siddhartha Institute of Technology' },
-    application: { id: 103, name: 'Attendance monitoring', description: 'Biometric attendance for multi-tenant institutions' },
+    institution: {
+      name: 'SSIT',
+      city: 'Tumakuru',
+      logoUrl: 'https://ssit.edu.in/img/ssit-logo.png',
+      website: 'https://ssit.edu.in/',
+      address: 'Sri Siddhartha Institute of Technology'
+    },
+    application: {
+      id: 103,
+      name: 'Attendance monitoring',
+      description: 'Biometric attendance for multi-tenant institutions'
+    },
     apiUrl: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec'
   }
 };
