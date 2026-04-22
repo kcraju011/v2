@@ -420,7 +420,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
             </div>
 
             <div class="step-nav">
-              <button class="btn btn-primary" type="button" onclick="goRegisterStep(2)">
+              <button class="btn btn-primary" type="button" onclick="if(validateRegisterStep(1)) goRegisterStep(2)">
                 Continue
               </button>
             </div>
@@ -506,7 +506,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
             <div class="step-nav">
               <button class="btn btn-secondary" type="button" onclick="goRegisterStep(1)">Back</button>
-              <button class="btn btn-primary" type="button" onclick="goRegisterStep(3)">Continue</button>
+              <button class="btn btn-primary" type="button" onclick="if(validateRegisterStep(2)) goRegisterStep(3)">Continue</button>
             </div>
           </section>
 
@@ -1189,6 +1189,17 @@ const REGISTER_BRANCH_OPTIONS = [
   { value: 'online', label: 'Online / Distance Learning' }
 ];
 
+const DEFAULT_DEPARTMENT_OPTIONS = [
+  { value: 'cse', label: 'Computer Science' },
+  { value: 'ece', label: 'Electronics & Communication' },
+  { value: 'mech', label: 'Mechanical Engineering' },
+  { value: 'civil', label: 'Civil Engineering' },
+  { value: 'hr', label: 'Human Resources' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'frontend', label: 'Frontend' },
+  { value: 'backend', label: 'Backend' }
+];
+
 let registerLookupState = {
   roles: [],
   departments: [],
@@ -1633,6 +1644,13 @@ async function loadRegisterLookups() {
     updateRegisterFormByRole();
     populateAdminDepartmentSelect();
   } catch (e) {
+    if (!registerLookupState.departments || !registerLookupState.departments.length) {
+      registerLookupState.departments = DEFAULT_DEPARTMENT_OPTIONS;
+    }
+    renderBranchOptions();
+    renderRoleOptions(COLLEGE_ROLE_OPTIONS, getRolePlaceholder());
+    renderDepartmentOptions(registerLookupState.departments, 'Select department...');
+    refreshRegisterConditionalFields();
     toast('Could not load register form options', 'error');
   }
 }
