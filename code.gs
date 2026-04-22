@@ -97,7 +97,8 @@ var TENANT_DIRECTORY = {
       id: 101,
       name: 'Attendance monitoring',
       description: 'Multi-tenant biometric attendance monitoring'
-    }
+    },
+    apiUrl: 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec'
   },
   '2': {
     guid: '2',
@@ -113,8 +114,9 @@ var TENANT_DIRECTORY = {
     application: {
       id: 102,
       name: 'Attendance monitoring',
-      description: 'Biometric attendance for students, teachers and staff'
-    }
+      description: 'Biometric attendance for students, teachers and employees'
+    },
+    apiUrl: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev'
   },
   '3': {
     guid: '3',
@@ -131,7 +133,8 @@ var TENANT_DIRECTORY = {
       id: 103,
       name: 'Attendance monitoring',
       description: 'Biometric attendance for multi-tenant institutions'
-    }
+    },
+    apiUrl: 'https://script.google.com/macros/s/AKfycbwlTZpSSvpBZkJsOK5GelxsX2GOMH5E6M2HdSk43N4/dev'
   }
 };
 
@@ -187,6 +190,8 @@ function doGet(e) {
   try {
     var p = e && e.parameter ? e.parameter : {};
     if (p.guid) setRequestGuid(p.guid);
+    if (p.getApplicationFromGuid)
+      return jsonOut(getOrgByGUID(p.getApplicationFromGuid));
     if (p.getOrgByGUID || p.action === 'getOrgByGUID')
       return jsonOut(getOrgByGUID(p.guid || p.getOrgByGUID));
     if (p.action === 'getRolesDepartments')
@@ -371,7 +376,7 @@ function getOrgByGUID(guid) {
       roles: roles,
       institution: tenant.institution,
       application: tenant.application,
-      apiUrl: getWebAppUrl()
+      apiUrl: tenant.apiUrl || getWebAppUrl()
     };
   } catch (err) {
     return { success: false, message: 'getOrgByGUID: ' + err };
@@ -1550,11 +1555,12 @@ function setupSheets() {
     var created = [];
     Object.keys(SH).forEach(function(key) { getSheet(SH[key]); created.push(SH[key]); });
 
-    // Roles: id 1 = admin, 2 = teacher, 3 = student
+    // Roles: id 1 = admin, 2 = teacher/faculty, 3 = student, 4 = employee
     ensureExactRows('Roles', [
       [1, 'admin'],
       [2, 'teacher'],
-      [3, 'student']
+      [3, 'student'],
+      [4, 'employee']
     ]);
 
     // Departments: id 1 = CSE

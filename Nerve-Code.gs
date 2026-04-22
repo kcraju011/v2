@@ -1,0 +1,195 @@
+var NERVE_SPREADSHEET_ID = '1g43D4SH7DnYAh05trU5t5xhfyVxP43unO4knX8WdA9k';
+var TENANT_SHEET_NAME = 'Tenants';
+
+var TENANT_HEADERS = [
+  'guid',
+  'alias',
+  'institution_name',
+  'org_type',
+  'city',
+  'spreadsheet_url',
+  'api_url',
+  'application_id',
+  'application_name',
+  'application_description',
+  'logo_url',
+  'website',
+  'status',
+  'created_at',
+  'updated_at'
+];
+
+var DEFAULT_TENANTS = [
+  {
+    guid: '1',
+    alias: 'SIT',
+    institution_name: 'SIT',
+    org_type: 'college',
+    city: 'Tumakuru',
+    spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1c5ZGKxr-ZNxbao6L6D87N8JNSvPNf2Il9Xnl8ha04f8/edit?gid=0#gid=0',
+    api_url: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev',
+    application_id: '101',
+    application_name: 'Attendance monitoring',
+    application_description: 'Biometric attendance for students, teachers and employees',
+    logo_url: '',
+    website: '',
+    status: 'active'
+  },
+  {
+    guid: '2',
+    alias: 'SSIT',
+    institution_name: 'SSIT',
+    org_type: 'college',
+    city: 'Tumakuru',
+    spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1yGS6eyC6NTqwu6dllTYALe_Sc_0hn4_furgU-Wq6bH4/edit?gid=0#gid=0',
+    api_url: 'https://script.google.com/macros/s/AKfycbwlTZpSSvpBZkJsOK5GelxsX2GOMH5E6M2HdSk43N4/dev',
+    application_id: '102',
+    application_name: 'Attendance monitoring',
+    application_description: 'Biometric attendance for students, teachers and employees',
+    logo_url: '',
+    website: '',
+    status: 'active'
+  }
+];
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function nerveSs() {
+  return SpreadsheetApp.openById(NERVE_SPREADSHEET_ID);
+}
+
+function nerveSheet() {
+  var sheet = nerveSs().getSheetByName(TENANT_SHEET_NAME);
+  if (!sheet) {
+    sheet = nerveSs().insertSheet(TENANT_SHEET_NAME);
+    sheet.appendRow(TENANT_HEADERS);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function ensureNerveRegistry() {
+  var sheet = nerveSheet();
+  var rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues() : [];
+  if (rows.length) return;
+  var values = DEFAULT_TENANTS.map(function(t) {
+    return [
+      t.guid, t.alias, t.institution_name, t.org_type, t.city, t.spreadsheet_url, t.api_url,
+      t.application_id, t.application_name, t.application_description, t.logo_url, t.website,
+      t.status, new Date().toISOString(), new Date().toISOString()
+    ];
+  });
+  sheet.getRange(2, 1, values.length, TENANT_HEADERS.length).setValues(values);
+}
+
+function rowsToObjects(values) {
+  if (!values || !values.length) return [];
+  var headers = values[0];
+  return values.slice(1).map(function(row) {
+    var obj = {};
+    headers.forEach(function(header, idx) {
+      obj[String(header || '').trim()] = row[idx];
+    });
+    return obj;
+  });
+}
+
+function getTenants() {
+  ensureNerveRegistry();
+  return rowsToObjects(nerveSheet().getDataRange().getValues());
+}
+
+function normalizeGuid(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getTenantByGuid(guid) {
+  var target = normalizeGuid(guid);
+  if (!target) return null;
+  var tenants = getTenants();
+  for (var i = 0; i < tenants.length; i++) {
+    var row = tenants[i];
+    var rowGuid = normalizeGuid(row.guid);
+    var alias = normalizeGuid(row.alias);
+    if (rowGuid === target || alias === target) return row;
+  }
+  return null;
+}
+
+function formatTenantResponse(row) {
+  if (!row) return { success: false, message: 'Tenant not found' };
+  return {
+    success: true,
+    guid: String(row.guid || ''),
+    institution: {
+      name: String(row.institution_name || ''),
+      city: String(row.city || ''),
+      logoUrl: String(row.logo_url || ''),
+      website: String(row.website || ''),
+      address: String(row.city || '')
+    },
+    application: {
+      id: String(row.application_id || ''),
+      name: String(row.application_name || ''),
+      description: String(row.application_description || '')
+    },
+    orgType: String(row.org_type || ''),
+    spreadsheetUrl: String(row.spreadsheet_url || ''),
+    apiUrl: String(row.api_url || ''),
+    status: String(row.status || 'active')
+  };
+}
+
+function getApplicationFromGuid(guid) {
+  return formatTenantResponse(getTenantByGuid(guid));
+}
+
+function doGet(e) {
+  try {
+    var p = e && e.parameter ? e.parameter : {};
+    if (p.setup === '1') {
+      ensureNerveRegistry();
+      return jsonOut({ success: true, message: 'Nerve registry ready' });
+    }
+    if (p.listTenants === '1') {
+      return jsonOut({ success: true, tenants: getTenants() });
+    }
+    if (p.getApplicationFromGuid) {
+      return jsonOut(getApplicationFromGuid(p.getApplicationFromGuid));
+    }
+    if (p.guid) {
+      return jsonOut(getApplicationFromGuid(p.guid));
+    }
+    return jsonOut({
+      success: true,
+      message: 'Nerve registry is running',
+      endpoints: ['?getApplicationFromGuid=GUID', '?listTenants=1']
+    });
+  } catch (err) {
+    return jsonOut({ success: false, message: 'Nerve doGet: ' + err });
+  }
+}
+
+function doPost(e) {
+  try {
+    var body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+    if (body.action === 'setup') {
+      ensureNerveRegistry();
+      return jsonOut({ success: true, message: 'Nerve registry ready' });
+    }
+    if (body.action === 'getApplicationFromGuid') {
+      return jsonOut(getApplicationFromGuid(body.guid));
+    }
+    return jsonOut({ success: false, message: 'Unknown action' });
+  } catch (err) {
+    return jsonOut({ success: false, message: 'Nerve doPost: ' + err });
+  }
+}
+
+function setupNerveRegistry() {
+  ensureNerveRegistry();
+  return { success: true, message: 'Nerve tenants seeded' };
+}

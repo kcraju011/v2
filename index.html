@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>BioAttend – SIT Tumkur</title>
+<title>BioAttend SaaS</title>
 <link rel="manifest" href="/manifest.json"/>
 <meta name="theme-color" content="#4f6ef7"/>
 <meta name="mobile-web-app-capable" content="yes"/>
@@ -15,18 +15,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --bg:#050a1a;--card:#0d1530;--inp:#111d3a;--tab:#1a2a52;
-  --acc:#4f6ef7;--acc2:#7c3aed;--text:#e8eaf6;--muted:#6b7db3;
-  --border:#1e2f5a;--danger:#ef4444;--success:#22c55e;--warn:#f59e0b;
-  --rad:12px;
+  --bg:#020617;--card:#0b1224;--inp:#111a33;--tab:#182447;
+  --acc:#6d7cff;--acc2:#4f46e5;--text:#f1f5f9;--muted:#94a3b8;
+  --border:#223154;--danger:#ef4444;--success:#22c55e;--warn:#f59e0b;
+  --rad:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Sora',sans-serif;background:var(--bg);min-height:100vh;
   display:flex;flex-direction:column;align-items:center;padding:12px;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:radial-gradient(ellipse 80% 50% at 20% -10%,rgba(79,110,247,.18) 0%,transparent 60%),
-             radial-gradient(ellipse 60% 40% at 80% 110%,rgba(124,58,237,.14) 0%,transparent 55%)}
-.card{position:relative;width:100%;max-width:460px;background:var(--card);
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%,rgba(109,124,255,.22) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 110%,rgba(79,70,229,.16) 0%,transparent 55%),
+    linear-gradient(180deg,rgba(255,255,255,.02) 0%,transparent 20%,transparent 80%,rgba(255,255,255,.02) 100%)}
+.card{position:relative;width:100%;max-width:640px;background:var(--card);
   border:1px solid var(--border);border-radius:22px;overflow:hidden;
   box-shadow:0 32px 80px rgba(0,0,0,.6);z-index:1;margin-bottom:12px;
   animation:up .45s cubic-bezier(.22,1,.36,1) both}
@@ -73,6 +75,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   border:1px solid var(--border);border-radius:var(--rad);color:var(--text);
   font-family:'Sora',sans-serif;font-size:13px;outline:none;
   transition:border-color .2s,box-shadow .2s}
+.field input[readonly],.field select:disabled,.field input:disabled{opacity:.72;cursor:not-allowed}
 .field input::placeholder,.field textarea::placeholder{color:var(--muted);font-size:12px}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,110,247,.13)}
 .field select option{background:#1a2a52}
@@ -104,10 +107,50 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   gap:7px;margin-top:9px;transition:background .2s}
 .btn-exit:hover{background:rgba(239,68,68,.2)}
 .btn-exit:disabled{opacity:.42;cursor:not-allowed}
+.btn-link{background:none;border:none;color:var(--acc);font-family:'Sora',sans-serif;font-size:12px;cursor:pointer;padding:0}
+.btn-link:hover{text-decoration:underline}
 
 .divider{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:10.5px}
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
 .hint{text-align:center;font-size:11px;color:var(--muted);margin-top:6px}
+.field-error{min-height:15px;margin-top:5px;color:#fca5a5;font-size:10.5px;line-height:1.3}
+.field.has-error input,.field.has-error select,.field.has-error textarea{border-color:rgba(239,68,68,.8);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+.field.has-error .pw-wrap input{border-color:rgba(239,68,68,.8)}
+.hidden{display:none !important}
+
+/* â”€â”€ Register flow â”€â”€ */
+.register-shell{display:flex;flex-direction:column;gap:14px}
+.register-intro{display:flex;flex-direction:column;gap:12px}
+.stepper{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stepper-step{min-height:70px;padding:11px 10px;border-radius:16px;border:1px solid var(--border);
+  background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0));color:var(--muted);
+  text-align:left;font-family:'Sora',sans-serif;cursor:pointer;display:flex;flex-direction:column;gap:4px;justify-content:center}
+.stepper-step strong{font-size:12px;color:var(--text)}
+.stepper-step span{font-size:10px;line-height:1.3}
+.stepper-step.active{border-color:rgba(109,124,255,.65);background:linear-gradient(180deg,rgba(109,124,255,.16),rgba(79,70,229,.08));color:#c7d2fe;box-shadow:0 8px 24px rgba(79,70,229,.18)}
+.stepper-step.completed{border-color:rgba(34,197,94,.35);color:#bbf7d0}
+.stepper-step:focus-visible,.btn:focus-visible,.mtab:focus-visible,.pw-eye:focus-visible,.btn-link:focus-visible,.step-nav:focus-visible,.sub-tab:focus-visible,.seg:focus-visible,.dash-logout:focus-visible,.export-btn:focus-visible,.pwa-install-btn:focus-visible,.pwa-dismiss:focus-visible{outline:2px solid rgba(109,124,255,.95);outline-offset:2px}
+.step-panel{display:none;padding-top:4px}
+.step-panel.active{display:block}
+.step-copy{font-size:12px;color:var(--muted);margin:4px 0 12px;line-height:1.45}
+.step-nav{display:flex;gap:10px;margin-top:4px}
+.step-nav .btn{flex:1}
+.step-nav .btn-secondary{margin-top:0}
+.field-group{display:grid;gap:11px}
+.helper-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.helper-chip{padding:6px 10px;border-radius:999px;border:1px solid rgba(109,124,255,.24);background:rgba(109,124,255,.08);font-size:10.5px;color:#c7d2fe}
+.bio-lock{padding:13px;border-radius:16px;border:1px solid rgba(109,124,255,.2);background:rgba(109,124,255,.06)}
+.bio-lock.hidden{display:none !important}
+.bio-lock-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.bio-lock-head strong{font-size:12px;color:var(--text)}
+.bio-lock-head span{font-size:10.5px;color:var(--muted)}
+.bio-status{font-size:11px;color:#c7d2fe;line-height:1.45}
+.progress-line{height:3px;background:var(--border);border-radius:999px;overflow:hidden}
+.progress-line span{display:block;height:100%;width:33.33%;border-radius:inherit;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .25s ease}
+@media(max-width:520px){
+  .stepper{grid-template-columns:1fr}
+  .step-nav{flex-direction:column}
+}
 
 /* ── Info / status ── */
 .info-box{border-radius:10px;padding:9px 12px;font-size:12px;margin-bottom:11px;
@@ -316,103 +359,207 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
          biometric_code(post), device_identification(auto)
     ══════════════════════════════════════════════ -->
     <div class="pane" id="pane-register">
-      <div class="section-label">Basic Info</div>
-
-      <div class="row2">
-        <div class="field">
-          <label>Name <span class="req">*</span></label>
-          <input type="text" id="r-name" placeholder="Enter your full name" maxlength="80" autocomplete="name" required/>
+      <div class="register-shell">
+        <div class="register-intro">
+          <div class="info-box blue" role="status" aria-live="polite">
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+            <span>Build your account in 3 steps. Fields with a star are required.</span>
+          </div>
+          <div class="progress-line" aria-hidden="true"><span id="register-progress-bar"></span></div>
+          <div class="stepper" role="list" aria-label="Registration steps">
+            <button type="button" class="stepper-step active" id="register-step-tab-1" data-step="1" aria-current="step" onclick="goRegisterStep(1)">
+              <strong>1. Basic Info</strong>
+              <span>Name, DOB, contact details, and institution ID.</span>
+            </button>
+            <button type="button" class="stepper-step" id="register-step-tab-2" data-step="2" aria-current="false" onclick="goRegisterStep(2)">
+              <strong>2. Organization &amp; Role</strong>
+              <span>Campus, branch, role, and department context.</span>
+            </button>
+            <button type="button" class="stepper-step" id="register-step-tab-3" data-step="3" aria-current="false" onclick="goRegisterStep(3)">
+              <strong>3. Security &amp; Biometric</strong>
+              <span>Password setup and biometric enrollment.</span>
+            </button>
+          </div>
         </div>
-        <div class="field">
-          <label>DOB <span class="req">*</span></label>
-          <input type="date" id="r-dob" required/>
-        </div>
+
+        <form id="register-form" class="register-form" novalidate onsubmit="return false">
+          <section class="step-panel active" id="register-step-1" aria-labelledby="register-step-1-title">
+            <div class="section-label" id="register-step-1-title">Step 1 of 3 · Basic Info</div>
+            <div class="step-copy">Start with your personal details. We’ll use them to create the account and verify attendance records.</div>
+
+            <div class="row2">
+              <div class="field" id="field-r-name">
+                <label for="r-name">Name <span class="req">*</span></label>
+                <input type="text" id="r-name" placeholder="Enter your full name" maxlength="80" autocomplete="name" required aria-describedby="err-r-name"/>
+                <div class="field-error" id="err-r-name" role="alert"></div>
+              </div>
+              <div class="field" id="field-r-dob">
+                <label for="r-dob">DOB <span class="req">*</span></label>
+                <input type="date" id="r-dob" required aria-describedby="err-r-dob"/>
+                <div class="field-error" id="err-r-dob" role="alert"></div>
+              </div>
+            </div>
+
+            <div class="field" id="field-r-email">
+              <label for="r-email">Email <span class="req">*</span></label>
+              <input type="email" id="r-email" placeholder="name@organization.com" maxlength="120" autocomplete="email" required aria-describedby="err-r-email"/>
+              <div class="field-error" id="err-r-email" role="alert"></div>
+            </div>
+
+            <div class="row2">
+              <div class="field" id="field-r-mobile">
+                <label for="r-mobile">Mobile <span class="req">*</span></label>
+                <input type="tel" id="r-mobile" placeholder="+91 9876543210" maxlength="20" autocomplete="tel" required aria-describedby="err-r-mobile"/>
+                <div class="field-error" id="err-r-mobile" role="alert"></div>
+              </div>
+              <div class="field" id="field-r-emp-id">
+                <label for="r-employee-id">Student / Employee ID <span class="req">*</span></label>
+                <input type="text" id="r-employee-id" placeholder="Institution unique ID" maxlength="40" autocomplete="off" required aria-describedby="err-r-employee-id"/>
+                <div class="field-error" id="err-r-employee-id" role="alert"></div>
+              </div>
+            </div>
+
+            <div class="step-nav">
+              <button class="btn btn-primary" type="button" onclick="goRegisterStep(2)">
+                Continue
+              </button>
+            </div>
+          </section>
+
+          <section class="step-panel" id="register-step-2" aria-labelledby="register-step-2-title">
+            <div class="section-label" id="register-step-2-title">Step 2 of 3 · Organization &amp; Role</div>
+            <div class="step-copy">Choose the institution context, campus or branch, and the role-specific details that apply to you.</div>
+
+            <div class="row2">
+              <div class="field" id="field-r-institute">
+                <label id="r-org-name-label" for="r-institute">Organization Name <span class="req">*</span></label>
+                <input type="text" id="r-institute" value="" placeholder="Enter organization name" maxlength="120" required aria-describedby="err-r-institute"/>
+                <div class="field-error" id="err-r-institute" role="alert"></div>
+              </div>
+              <div class="field" id="field-r-org-type">
+                <label for="r-org-type">Org Type <span class="req">*</span></label>
+                <select id="r-org-type" required onchange="updateRegisterFormByRole()" aria-describedby="err-r-org-type">
+                  <option value="">Select...</option>
+                  <option value="college">College</option>
+                  <option value="university">University</option>
+                  <option value="institute">Institute</option>
+                </select>
+                <div class="field-error" id="err-r-org-type" role="alert"></div>
+              </div>
+            </div>
+
+            <div class="field" id="field-r-branch">
+              <label for="r-branch">College / Branch <span class="req">*</span></label>
+              <select id="r-branch" required aria-describedby="err-r-branch">
+                <option value="">Select campus or branch...</option>
+              </select>
+              <div class="field-error" id="err-r-branch" role="alert"></div>
+            </div>
+
+            <div class="row2">
+              <div class="field" id="field-r-role">
+                <label id="r-role-label" for="r-role">Role <span class="req">*</span></label>
+                <select id="r-role" required onchange="updateRegisterFormByRole()" aria-describedby="err-r-role">
+                  <option value="">Select organization type first...</option>
+                </select>
+                <div class="field-error" id="err-r-role" role="alert"></div>
+              </div>
+              <div class="field" id="field-r-dept">
+                <label id="r-dept-label" for="r-dept">Department <span class="req">*</span></label>
+                <select id="r-dept" required aria-describedby="err-r-dept">
+                  <option value="">Loading departments...</option>
+                </select>
+                <div class="field-error" id="err-r-dept" role="alert"></div>
+              </div>
+            </div>
+
+            <div class="field hidden" id="field-r-study-level">
+              <label for="r-study-level">Semester / Year of Study <span class="req">*</span></label>
+              <select id="r-study-level" aria-describedby="err-r-study-level">
+                <option value="">Select study level...</option>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+                <option value="3rd Semester">3rd Semester</option>
+                <option value="4th Semester">4th Semester</option>
+                <option value="5th Semester">5th Semester</option>
+                <option value="6th Semester">6th Semester</option>
+                <option value="7th Semester">7th Semester</option>
+                <option value="8th Semester">8th Semester</option>
+              </select>
+              <div class="field-error" id="err-r-study-level" role="alert"></div>
+            </div>
+
+            <div class="field hidden" id="field-r-designation">
+              <label for="r-designation">Designation <span class="req">*</span></label>
+              <input type="text" id="r-designation" placeholder="e.g. Assistant Professor / HR Manager" maxlength="80" autocomplete="organization-title" aria-describedby="err-r-designation"/>
+              <div class="field-error" id="err-r-designation" role="alert"></div>
+            </div>
+
+            <div class="helper-strip" aria-hidden="true">
+              <span class="helper-chip">Role-driven fields update automatically</span>
+              <span class="helper-chip">College branches help route users faster</span>
+            </div>
+
+            <div class="step-nav">
+              <button class="btn btn-secondary" type="button" onclick="goRegisterStep(1)">Back</button>
+              <button class="btn btn-primary" type="button" onclick="goRegisterStep(3)">Continue</button>
+            </div>
+          </section>
+
+          <section class="step-panel" id="register-step-3" aria-labelledby="register-step-3-title">
+            <div class="section-label" id="register-step-3-title">Step 3 of 3 · Security &amp; Biometric</div>
+            <div class="step-copy">Set a strong password, confirm it, then create the account. Biometric enrollment unlocks immediately after creation.</div>
+
+            <div class="row2">
+              <div class="field" id="field-r-password">
+                <label for="r-password">Password <span class="req">*</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">(min 8 chars)</span></label>
+                <div class="pw-wrap">
+                  <input type="password" id="r-password" placeholder="Create a strong password" minlength="8" maxlength="64" autocomplete="new-password" required aria-describedby="err-r-password"/>
+                  <button class="pw-eye" onclick="togglePw('r-password')" type="button" aria-label="Show or hide password">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+                <div class="field-error" id="err-r-password" role="alert"></div>
+              </div>
+              <div class="field" id="field-r-confirm-password">
+                <label for="r-confirm-password">Confirm Password <span class="req">*</span></label>
+                <div class="pw-wrap">
+                  <input type="password" id="r-confirm-password" placeholder="Re-enter your password" minlength="8" maxlength="64" autocomplete="new-password" required aria-describedby="err-r-confirm-password"/>
+                  <button class="pw-eye" onclick="togglePw('r-confirm-password')" type="button" aria-label="Show or hide confirm password">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+                <div class="field-error" id="err-r-confirm-password" role="alert"></div>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" id="btn-register" type="button" onclick="handleRegisterV2()">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Create Account
+            </button>
+
+            <div class="bio-lock hidden" id="bio-panel" aria-live="polite">
+              <div class="bio-lock-head">
+                <strong>Biometric registration</strong>
+                <span>Available after account creation</span>
+              </div>
+              <div class="bio-status" id="bio-hint">Create your account first, then register fingerprint or Face ID on this device.</div>
+              <button class="btn btn-secondary" id="btn-bio-reg" disabled onclick="handleBiometricRegister()" type="button">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+                Register Fingerprint / Face ID
+              </button>
+            </div>
+
+            <div class="step-nav">
+              <button class="btn btn-secondary" type="button" onclick="goRegisterStep(2)">Back</button>
+            </div>
+          </section>
+        </form>
       </div>
-
-      <div class="field">
-        <label>Email <span class="req">*</span></label>
-        <input type="email" id="r-email" placeholder="name@organization.com" maxlength="120" autocomplete="email" required/>
-      </div>
-
-      <div class="field">
-        <label>Mobile <span class="req">*</span></label>
-        <input type="tel" id="r-mobile" placeholder="+91 9876543210" maxlength="20" autocomplete="tel" required/>
-      </div>
-
-      <div class="section-label">Organization</div>
-
-      <div class="row2">
-        <div class="field">
-          <label id="r-org-name-label">Organization Name <span class="req">*</span></label>
-          <input type="text" id="r-institute" value="" placeholder="Enter organization name" maxlength="120" required/>
-        </div>
-        <div class="field">
-          <label>Org Type <span class="req">*</span></label>
-          <select id="r-org-type" required onchange="updateRegisterFormByRole()">
-            <option value="">Select...</option>
-            <option value="school">School</option>
-            <option value="college">College</option>
-            <option value="company">Company / Office</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="section-label">Role & Department</div>
-
-      <div class="field">
-        <label id="r-role-label">Role <span class="req">*</span></label>
-        <select id="r-role" required onchange="updateRegisterFormByRole()">
-          <option value="">Select organization type first...</option>
-        </select>
-      </div>
-      <div class="hint">Each organization can have only one admin account.</div>
-
-      <div class="field">
-        <label id="r-dept-label">Department <span class="req">*</span></label>
-        <select id="r-dept" required>
-          <option value="">Loading departments...</option>
-        </select>
-      </div>
-
-      <div class="section-label">Location</div>
-      <div class="hint" id="r-location-hint">Admins can add labs, classrooms, and office locations after biometric sign-in.</div>
-
-      <div class="section-label">Security</div>
-
-      <div class="field">
-        <label>Password <span class="req">*</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">(min 8 chars)</span></label>
-        <div class="pw-wrap">
-          <input type="password" id="r-password" placeholder="Create a strong password" minlength="8" maxlength="64" autocomplete="new-password" required/>
-          <button class="pw-eye" onclick="togglePw('r-password')" type="button">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Confirm Password <span class="req">*</span></label>
-        <div class="pw-wrap">
-          <input type="password" id="r-confirm-password" placeholder="Re-enter your password" minlength="8" maxlength="64" autocomplete="new-password" required/>
-          <button class="pw-eye" onclick="togglePw('r-confirm-password')" type="button">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="section-label">Action</div>
-
-      <button class="btn btn-primary" id="btn-register" onclick="handleRegister()">
-        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Create Account
-      </button>
-
-      <div class="section-label" style="margin-top:14px">Biometric</div>
-
-      <button class="btn btn-secondary" id="btn-bio-reg" disabled onclick="handleBiometricRegister()">
-        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
-        Register Fingerprint / Face ID
-      </button>
-      <div class="hint" id="bio-hint">Create your account first, then register biometric</div>
     </div>
 
     <!-- ══════════════════════════════════════════════
@@ -619,8 +766,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
-const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
-const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
+const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev';
+const NERVE_URL = 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec';
+          
 const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FALLBACK_TENANTS = {
   '1': {
@@ -629,15 +777,15 @@ const FALLBACK_TENANTS = {
     orgType: 'college',
     institution: { name: 'BioAttend Main', city: 'Tumakuru', logoUrl: '', website: '', address: 'Main tenant workspace' },
     application: { id: 101, name: 'Attendance monitoring', description: 'Multi-tenant biometric attendance monitoring' },
-    apiUrl: DEFAULT_TENANT_API
+    apiUrl: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev'
   },
   '2': {
     success: true,
     guid: '2',
     orgType: 'college',
     institution: { name: 'SIT', city: 'Tumakuru', logoUrl: '', website: '', address: 'Siddaganga Institute of Technology' },
-    application: { id: 102, name: 'Attendance monitoring', description: 'Biometric attendance for students, teachers and staff' },
-    apiUrl: DEFAULT_TENANT_API
+    application: { id: 102, name: 'Attendance monitoring', description: 'Biometric attendance for students, teachers and employees' },
+    apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
   '3': {
     success: true,
@@ -645,7 +793,7 @@ const FALLBACK_TENANTS = {
     orgType: 'college',
     institution: { name: 'SSIT', city: 'Tumakuru', logoUrl: '', website: '', address: 'Sri Siddhartha Institute of Technology' },
     application: { id: 103, name: 'Attendance monitoring', description: 'Biometric attendance for multi-tenant institutions' },
-    apiUrl: DEFAULT_TENANT_API
+    apiUrl: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec'
   }
 };
 
@@ -861,7 +1009,10 @@ function switchMain(tab) {
     if (pane) pane.classList.toggle('active', t===tab);
     if (tabBtn) tabBtn.classList.toggle('active', t===tab);
   });
-  if (tab === 'register') loadRegisterLookups();
+  if (tab === 'register') {
+    resetRegisterFlow();
+    loadRegisterLookups();
+  }
 }
 
 function switchSub(tab) {
@@ -1022,28 +1173,20 @@ function syncOrganizationName() {
   if (!orgEl.value) orgEl.value = '';
 }
 
-const COMPANY_DEPARTMENT_OPTIONS = [
-  { value: 'frontend_developer', label: 'Frontend Developer' },
-  { value: 'backend_developer', label: 'Backend Developer' },
-  { value: 'full_stack_developer', label: 'Full Stack Developer' },
-  { value: 'ui_ux_designer', label: 'UI/UX Designer' },
-  { value: 'hr', label: 'HR' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'operations', label: 'Operations' }
+const COLLEGE_ROLE_OPTIONS = [
+  { value: '1', label: 'Admin', roleKey: 'admin' },
+  { value: '2', label: 'Faculty', roleKey: 'faculty' },
+  { value: '3', label: 'Student', roleKey: 'student' },
+  { value: '4', label: 'Employee', roleKey: 'employee' }
 ];
 
-const SCHOOL_ROLE_OPTIONS = [
-  { value: 'student', label: 'Student' },
-  { value: 'teacher', label: 'Teacher' },
-  { value: 'admin', label: 'Admin (Manage labs/classrooms)' }
-];
-
-const COMPANY_ROLE_OPTIONS = [
-  { value: 'frontend_developer', label: 'Frontend Developer' },
-  { value: 'backend_developer', label: 'Backend Developer' },
-  { value: 'data_engineer', label: 'Data Engineer' },
-  { value: 'admin', label: 'Admin (Manage office locations)' }
+const REGISTER_BRANCH_OPTIONS = [
+  { value: 'main-campus', label: 'Main Campus' },
+  { value: 'north-campus', label: 'North Campus' },
+  { value: 'south-campus', label: 'South Campus' },
+  { value: 'city-branch', label: 'City Branch' },
+  { value: 'research-center', label: 'Research Center' },
+  { value: 'online', label: 'Online / Distance Learning' }
 ];
 
 let registerLookupState = {
@@ -1052,8 +1195,32 @@ let registerLookupState = {
   locations: []
 };
 
+let registerFlowState = {
+  step: 1,
+  accountCreated: false
+};
+
 function normalizeCode(value) {
   return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function normalizeRoleKey(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.includes('student')) return 'student';
+  if (raw.includes('faculty') || raw.includes('teacher') || raw.includes('lecturer')) return 'faculty';
+  if (raw.includes('admin')) return 'admin';
+  if (raw.includes('employee') || raw.includes('staff') || raw.includes('assistant')) return 'employee';
+  return raw;
+}
+
+function roleLabelFromKey(key) {
+  const raw = normalizeRoleKey(key);
+  if (raw === 'faculty') return 'Faculty';
+  if (raw === 'employee') return 'Employee';
+  if (raw === 'student') return 'Student';
+  if (raw === 'admin') return 'Admin';
+  return key || '';
 }
 
 function renderRoleOptions(options, placeholder) {
@@ -1061,9 +1228,18 @@ function renderRoleOptions(options, placeholder) {
   if (!roleEl) return;
   roleEl.innerHTML = `<option value="">${placeholder || 'Select...'}</option>` + options.map(opt => {
     const value = opt.role_id || opt.value || '';
-    const label = opt.name || opt.label || value;
-    return `<option value="${value}">${label}</option>`;
+    const label = roleLabelFromKey(opt.label || opt.name || value);
+    const roleKey = normalizeRoleKey(opt.roleKey || opt.name || opt.label || value);
+    return `<option value="${value}" data-role-key="${roleKey}">${label}</option>`;
   }).join('');
+}
+
+function renderBranchOptions() {
+  const branchEl = document.getElementById('r-branch');
+  if (!branchEl) return;
+  branchEl.innerHTML = '<option value="">Select campus or branch...</option>' + REGISTER_BRANCH_OPTIONS.map(opt =>
+    `<option value="${opt.value}">${opt.label}</option>`
+  ).join('');
 }
 
 function renderDepartmentOptions(options, placeholder) {
@@ -1097,17 +1273,96 @@ function isTeacherRole(userOrRole) {
 }
 
 function getTenantRoleOptions() {
-  return (registerLookupState.roles || []).map(role => ({
-    value: role.role_id || role.value || '',
-    label: role.name || role.label || role.role_id || ''
-  })).filter(role => role.value && role.label);
+  const mapped = (registerLookupState.roles || []).map(role => {
+    const value = role.role_id || role.value || '';
+    const key = normalizeRoleKey(role.name || role.label || role.roleKey || value);
+    return {
+      value,
+      label: roleLabelFromKey(role.name || role.label || value),
+      roleKey: key
+    };
+  }).filter(role => role.value);
+
+  const fallbackByKey = new Map(COLLEGE_ROLE_OPTIONS.map(role => [role.roleKey, role]));
+  mapped.forEach(role => fallbackByKey.delete(role.roleKey));
+  return mapped.concat(Array.from(fallbackByKey.values()));
 }
 
 function getRolePlaceholder() {
-  if (tenantState.orgType === 'company') return 'Select company role...';
-  if (tenantState.orgType === 'school') return 'Select school role...';
-  if (tenantState.orgType === 'college') return 'Select institution role...';
-  return 'Select role...';
+  return 'Select institution role...';
+}
+
+function getRegisterRoleKey() {
+  const roleEl = document.getElementById('r-role');
+  if (!roleEl || roleEl.selectedIndex < 0) return '';
+  const selected = roleEl.options[roleEl.selectedIndex];
+  return normalizeRoleKey(selected?.dataset?.roleKey || selected?.textContent || selected?.value || '');
+}
+
+function setFieldState(fieldId, message) {
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  const error = field.querySelector('.field-error');
+  if (message) {
+    field.classList.add('has-error');
+    if (error) error.textContent = message;
+    const input = field.querySelector('input, select, textarea');
+    if (input) input.setAttribute('aria-invalid', 'true');
+  } else {
+    field.classList.remove('has-error');
+    if (error) error.textContent = '';
+    const input = field.querySelector('input, select, textarea');
+    if (input) input.removeAttribute('aria-invalid');
+  }
+}
+
+function clearRegisterErrors() {
+  [
+    'field-r-name','field-r-dob','field-r-email','field-r-mobile','field-r-emp-id',
+    'field-r-institute','field-r-org-type','field-r-branch','field-r-role','field-r-dept',
+    'field-r-study-level','field-r-designation','field-r-password','field-r-confirm-password'
+  ].forEach(id => setFieldState(id, ''));
+}
+
+function setRegisterBiometricVisible(visible) {
+  const panel = document.getElementById('bio-panel');
+  const btn = document.getElementById('btn-bio-reg');
+  if (panel) panel.classList.toggle('hidden', !visible);
+  if (btn) btn.disabled = !visible;
+}
+
+function refreshRegisterConditionalFields() {
+  const roleKey = getRegisterRoleKey();
+  const studyField = document.getElementById('field-r-study-level');
+  const studyInput = document.getElementById('r-study-level');
+  const desigField = document.getElementById('field-r-designation');
+  const desigInput = document.getElementById('r-designation');
+  const deptLabel = document.getElementById('r-dept-label');
+
+  const showStudent = roleKey === 'student';
+  const showFacultyOrStaff = roleKey === 'faculty' || roleKey === 'employee';
+
+  if (studyField) studyField.classList.toggle('hidden', !showStudent);
+  if (studyInput) {
+    studyInput.required = showStudent;
+    if (!showStudent) {
+      studyInput.value = '';
+      setFieldState('field-r-study-level', '');
+    }
+  }
+
+  if (desigField) desigField.classList.toggle('hidden', !showFacultyOrStaff);
+  if (desigInput) {
+    desigInput.required = showFacultyOrStaff;
+    if (!showFacultyOrStaff) {
+      desigInput.value = '';
+      setFieldState('field-r-designation', '');
+    }
+  }
+
+  if (deptLabel) {
+    deptLabel.innerHTML = `${showFacultyOrStaff ? 'Department / Unit' : 'Department'} <span class="req">*</span>`;
+  }
 }
 
 function updateRegisterFormByRole() {
@@ -1115,38 +1370,29 @@ function updateRegisterFormByRole() {
   const orgTypeEl = document.getElementById('r-org-type');
   const orgInput = document.getElementById('r-institute');
   const orgLabel = document.getElementById('r-org-name-label');
-  const deptLabel = document.getElementById('r-dept-label');
-  const locationHint = document.getElementById('r-location-hint');
-  if (!roleEl || !orgTypeEl || !orgInput || !orgLabel || !deptLabel) return;
+  if (!roleEl || !orgTypeEl || !orgInput || !orgLabel) return;
 
-  const orgType = String(tenantState.orgType || orgTypeEl.value || '').toLowerCase();
+  const orgType = String(orgTypeEl.value || tenantState.orgType || '').toLowerCase();
   const selectedRole = String(roleEl.value || '');
   const roleOptions = getTenantRoleOptions();
-  const fallbackRoleOptions = orgType === 'company' ? COMPANY_ROLE_OPTIONS : SCHOOL_ROLE_OPTIONS;
-  const finalRoleOptions = roleOptions.length ? roleOptions : fallbackRoleOptions;
+  const finalRoleOptions = roleOptions.length ? roleOptions : COLLEGE_ROLE_OPTIONS;
 
   renderRoleOptions(finalRoleOptions, getRolePlaceholder());
   if (finalRoleOptions.some(opt => String(opt.value) === selectedRole)) roleEl.value = selectedRole;
 
-  orgLabel.innerHTML = `${orgType === 'company' ? 'Company' : 'Organization'} Name <span class="req">*</span>`;
-  orgInput.placeholder = orgType === 'company' ? 'Company name' : 'Organization name';
+  orgLabel.innerHTML = 'Organization Name <span class="req">*</span>';
+  orgInput.placeholder = orgType === 'university' ? 'University name' : (orgType === 'institute' ? 'Institute name' : 'College name');
   orgInput.readOnly = !!tenantState.institution?.name;
   if (tenantState.institution?.name) orgInput.value = tenantState.institution.name;
 
-  deptLabel.innerHTML = `${orgType === 'company' ? 'Department / Team' : 'Department'} <span class="req">*</span>`;
   if (registerLookupState.departments.length) {
-    renderDepartmentOptions(registerLookupState.departments, orgType === 'company' ? 'Select department or team...' : 'Select department...');
-  } else if (orgType === 'company') {
-    renderDepartmentOptions(COMPANY_DEPARTMENT_OPTIONS, 'Select department or team...');
+    renderDepartmentOptions(registerLookupState.departments, 'Select department...');
   } else {
     renderDepartmentOptions([], 'No departments configured');
   }
 
-  if (locationHint) {
-    locationHint.textContent = orgType === 'company'
-      ? 'Office locations are loaded from the tenant workspace after sign-in.'
-      : 'Labs, classrooms, and attendance points are loaded from the tenant workspace.';
-  }
+  renderBranchOptions();
+  refreshRegisterConditionalFields();
 }
 
 function renderStudentAttendancePanel(user, locations) {
@@ -1256,6 +1502,112 @@ function resetBiometricWorkspace() {
   restoreSignInForm();
 }
 
+function resetRegisterFlow() {
+  registerFlowState.step = 1;
+  registerFlowState.accountCreated = false;
+  clearRegisterErrors();
+  setRegisterBiometricVisible(false);
+  setRegisterStep(1, { silent: true });
+}
+
+function setRegisterStep(step, options = {}) {
+  const next = Math.min(Math.max(Number(step) || 1, 1), 3);
+  registerFlowState.step = next;
+
+  for (let i = 1; i <= 3; i++) {
+    const panel = document.getElementById(`register-step-${i}`);
+    const tab = document.getElementById(`register-step-tab-${i}`);
+    const active = i === next;
+    if (panel) panel.classList.toggle('active', active);
+    if (tab) {
+      tab.classList.toggle('active', active);
+      tab.classList.toggle('completed', i < next);
+      tab.setAttribute('aria-current', active ? 'step' : 'false');
+    }
+  }
+
+  const bar = document.getElementById('register-progress-bar');
+  if (bar) bar.style.width = next === 1 ? '33.33%' : next === 2 ? '66.66%' : '100%';
+
+  if (!options.silent && !options.skipFocus) {
+    const panel = document.getElementById(`register-step-${next}`);
+    const focusTarget = panel?.querySelector('input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
+    if (focusTarget) focusTarget.focus();
+  }
+}
+
+function goRegisterStep(step) {
+  const target = Math.min(Math.max(Number(step) || 1, 1), 3);
+  if (target > registerFlowState.step) {
+    for (let i = registerFlowState.step; i < target; i++) {
+      if (!validateRegisterStep(i)) {
+        setRegisterStep(i);
+        return false;
+      }
+    }
+  }
+  setRegisterStep(target);
+  return true;
+}
+
+function getRegisterValue(id) {
+  const el = document.getElementById(id);
+  return String(el?.value || '').trim();
+}
+
+function validateRegisterStep(step) {
+  const current = Number(step) || 1;
+  let valid = true;
+
+  if (current === 1) {
+    const name = getRegisterValue('r-name');
+    const dob = getRegisterValue('r-dob');
+    const email = getRegisterValue('r-email');
+    const mobile = getRegisterValue('r-mobile');
+    const memberId = getRegisterValue('r-employee-id');
+
+    if (!name) { setFieldState('field-r-name', 'Name is required.'); valid = false; } else if (!isValidRegistrationName(name)) { setFieldState('field-r-name', 'Enter a valid full name.'); valid = false; } else setFieldState('field-r-name', '');
+    if (!dob) { setFieldState('field-r-dob', 'Date of birth is required.'); valid = false; } else if (!isValidDob(dob)) { setFieldState('field-r-dob', 'Enter a valid date of birth.'); valid = false; } else setFieldState('field-r-dob', '');
+    if (!email) { setFieldState('field-r-email', 'Email is required.'); valid = false; } else if (!isValidRegistrationEmail(email)) { setFieldState('field-r-email', 'Enter a valid email address.'); valid = false; } else setFieldState('field-r-email', '');
+    if (!mobile) { setFieldState('field-r-mobile', 'Mobile number is required.'); valid = false; } else if (!isValidRegistrationMobile(mobile)) { setFieldState('field-r-mobile', 'Enter a valid mobile number.'); valid = false; } else setFieldState('field-r-mobile', '');
+    if (!memberId) { setFieldState('field-r-emp-id', 'Student / Employee ID is required.'); valid = false; } else if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{2,39}$/.test(memberId)) { setFieldState('field-r-emp-id', 'Use 3-40 letters, numbers, dots, dashes, or underscores.'); valid = false; } else setFieldState('field-r-emp-id', '');
+  }
+
+  if (current === 2) {
+    const orgType = getRegisterValue('r-org-type');
+    const inst = getRegisterValue('r-institute');
+    const branch = getRegisterValue('r-branch');
+    const role = getRegisterValue('r-role');
+    const dept = getRegisterValue('r-dept');
+    const roleKey = getRegisterRoleKey();
+    const studyLevel = getRegisterValue('r-study-level');
+    const designation = getRegisterValue('r-designation');
+
+    if (!inst) { setFieldState('field-r-institute', 'Organization name is required.'); valid = false; } else if (!isValidOrganizationName(inst)) { setFieldState('field-r-institute', 'Enter a valid organization name.'); valid = false; } else setFieldState('field-r-institute', '');
+    if (!orgType) { setFieldState('field-r-org-type', 'Select an organization type.'); valid = false; } else setFieldState('field-r-org-type', '');
+    if (!branch) { setFieldState('field-r-branch', 'Select a campus or branch.'); valid = false; } else setFieldState('field-r-branch', '');
+    if (!role) { setFieldState('field-r-role', 'Select a role.'); valid = false; } else setFieldState('field-r-role', '');
+    if (!dept) { setFieldState('field-r-dept', 'Select a department.'); valid = false; } else if (!isValidDepartmentValue(dept)) { setFieldState('field-r-dept', 'Select a valid department.'); valid = false; } else setFieldState('field-r-dept', '');
+
+    if (roleKey === 'student') {
+      if (!studyLevel) { setFieldState('field-r-study-level', 'Select a semester or year of study.'); valid = false; } else setFieldState('field-r-study-level', '');
+    }
+    if (roleKey === 'faculty' || roleKey === 'employee') {
+      if (!designation) { setFieldState('field-r-designation', 'Designation is required for faculty or employee.'); valid = false; } else setFieldState('field-r-designation', '');
+    }
+  }
+
+  if (current === 3) {
+    const pass = getRegisterValue('r-password');
+    const confirmPass = getRegisterValue('r-confirm-password');
+
+    if (!pass) { setFieldState('field-r-password', 'Password is required.'); valid = false; } else if (pass.length < 8) { setFieldState('field-r-password', 'Password must be at least 8 characters.'); valid = false; } else if (!/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)) { setFieldState('field-r-password', 'Password must include at least one letter and one number.'); valid = false; } else setFieldState('field-r-password', '');
+    if (!confirmPass) { setFieldState('field-r-confirm-password', 'Confirm your password.'); valid = false; } else if (pass !== confirmPass) { setFieldState('field-r-confirm-password', 'Passwords do not match.'); valid = false; } else setFieldState('field-r-confirm-password', '');
+  }
+
+  return valid;
+}
+
 async function loadRegisterLookups() {
   syncOrganizationName();
   try {
@@ -1277,6 +1629,7 @@ async function loadRegisterLookups() {
     const locations = (locRes.data || []).filter(l => l && l.attendance_location_id);
     registerLookupState.locations = locations;
     tenantState.attendanceLocations = locations;
+    renderBranchOptions();
     updateRegisterFormByRole();
     populateAdminDepartmentSelect();
   } catch (e) {
@@ -1546,6 +1899,69 @@ async function handleRegister() {
 }
 
 // ── Biometric registration (writes biometric_code to Users) ──
+async function handleRegisterV2() {
+  clearRegisterErrors();
+  refreshRegisterConditionalFields();
+
+  if (!validateRegisterStep(1)) {
+    goRegisterStep(1);
+    toast('Complete Step 1 before continuing', 'error');
+    return;
+  }
+  if (!validateRegisterStep(2)) {
+    goRegisterStep(2);
+    toast('Complete Step 2 before continuing', 'error');
+    return;
+  }
+  if (!validateRegisterStep(3)) {
+    goRegisterStep(3);
+    toast('Fix the security fields to continue', 'error');
+    return;
+  }
+
+  const name   = getRegisterValue('r-name');
+  const email  = getRegisterValue('r-email');
+  const pass   = document.getElementById('r-password').value;
+  const dob    = getRegisterValue('r-dob');
+  const mobile = getRegisterValue('r-mobile');
+  const dept   = document.getElementById('r-dept').value;
+  const role   = document.getElementById('r-role').value;
+  const inst   = getRegisterValue('r-institute');
+  const orgType = document.getElementById('r-org-type').value;
+  const branch = document.getElementById('r-branch').value;
+  const memberId = getRegisterValue('r-employee-id');
+  const studyLevel = document.getElementById('r-study-level').value;
+  const designation = getRegisterValue('r-designation');
+
+  setLoading('btn-register',true);
+  try{
+    const dId = await getDeviceId();
+    const d   = await api({
+      action:               'registerUser',
+      name, email, password:pass, dob, mobile,
+      departmentId:         dept,
+      roleId:               role,
+      instituteId:          inst,
+      orgType:              orgType,
+      branch:               branch,
+      studentEmployeeId:    memberId,
+      studyLevel:           studyLevel,
+      designation:          designation,
+      deviceId:             dId
+    });
+    if(d.success){
+      registeredUid=d.userId;
+      registerFlowState.accountCreated = true;
+      toast('âœ“ Account created! Now register biometric.','success');
+      setRegisterBiometricVisible(true);
+      const bioHint = document.getElementById('bio-hint');
+      if (bioHint) bioHint.textContent='Tap below to register fingerprint or Face ID on this device.';
+      await api({action:'registerDevice',userId:d.userId,deviceId:dId});
+    }else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+  setLoading('btn-register',false);
+}
+
 async function handleBiometricRegister() {
   if(!registeredUid){toast('Create account first','error');return;}
   if(!window.PublicKeyCredential){toast('WebAuthn not supported','error');return;}
