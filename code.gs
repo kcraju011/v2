@@ -199,6 +199,7 @@ function doGet(e) {
   try {
     var p = e && e.parameter ? e.parameter : {};
     if (p.guid) setRequestGuid(p.guid);
+    ensureCoreTenantData();
     var callback = p.callback || '';
     if (p.getApplicationFromGuid)
       return respondOut(getOrgByGUID(p.getApplicationFromGuid), callback);
@@ -212,7 +213,10 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  try { return jsonOut(route(JSON.parse(e.postData.contents))); }
+  try {
+    ensureCoreTenantData();
+    return jsonOut(route(JSON.parse(e.postData.contents)));
+  }
   catch(err) { return jsonOut({ success: false, message: 'doPost: ' + err }); }
 }
 
@@ -223,6 +227,7 @@ function doPost(e) {
 function route(b) {
   b = b || {};
   setRequestGuid(b.guid);
+  ensureCoreTenantData();
   switch (b.action) {
     case 'register':              return registerUser(b);
     case 'registerUser':          return registerUser(b);
@@ -1482,8 +1487,25 @@ function checkDevice(b) {
 // ============================================================
 
 function getLookup(sheetName) {
-  try { return { success: true, data: getCached(sheetName, TTL_LOOKUP) }; }
+  try {
+    ensureCoreTenantData();
+    return { success: true, data: getCached(sheetName, TTL_LOOKUP) };
+  }
   catch(err) { return { success: false, message: 'getLookup: ' + err }; }
+}
+
+function ensureCoreTenantData() {
+  var coreSheets = [SH.ROLES, SH.DEPARTMENTS, SH.ATT_TYPE, SH.ATT_LOCATIONS, SH.ATT_WINDOWS];
+  var hasAnyData = coreSheets.some(function(name) {
+    try {
+      return getSheet(name).getLastRow() > 1;
+    } catch (e) {
+      return false;
+    }
+  });
+  if (!hasAnyData) {
+    setupSheets();
+  }
 }
 
 function getUserLocMap(b) {
