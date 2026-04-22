@@ -752,7 +752,7 @@ const FALLBACK_TENANTS = {
       address: 'Main tenant workspace'
     },
     application: {
-      id: 101,
+      id: 105,
       name: 'Attendance monitoring',
       description: 'Multi-tenant biometric attendance monitoring'
     },
@@ -771,7 +771,7 @@ const FALLBACK_TENANTS = {
       address: 'Siddaganga Institute of Technology'
     },
     application: {
-      id: 102,
+      id: 105,
       name: 'Attendance monitoring',
       description: 'Biometric attendance for students, teachers and employees'
     },
@@ -790,7 +790,7 @@ const FALLBACK_TENANTS = {
       address: 'Sri Siddhartha Institute of Technology'
     },
     application: {
-      id: 103,
+      id: 105,
       name: 'Attendance monitoring',
       description: 'Biometric attendance for multi-tenant institutions'
     },
@@ -824,7 +824,7 @@ let tenantState   = {
 // ── API ───────────────────────────────────────────────────────
 function readGuidFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  return (params.get('GUID') || params.get('guid') || params.get('q') || '1').trim();
+  return (params.get('GUID') || params.get('guid') || params.get('q') || '9').trim();
 }
 
 function tenantCacheKey(guid) {
