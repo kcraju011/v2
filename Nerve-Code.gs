@@ -27,11 +27,11 @@ var DEFAULT_TENANTS = [
     org_type: 'college',
     city: 'Tumakuru',
     spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1c5ZGKxr-ZNxbao6L6D87N8JNSvPNf2Il9Xnl8ha04f8/edit?gid=0#gid=0',
-    api_url: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev',
+    api_url: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec',
     application_id: '101',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
-    logo_url: '',
+    logo_url: 'https://web.sit.ac.in/',
     website: '',
     status: 'active'
   },
@@ -42,11 +42,11 @@ var DEFAULT_TENANTS = [
     org_type: 'college',
     city: 'Tumakuru',
     spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1yGS6eyC6NTqwu6dllTYALe_Sc_0hn4_furgU-Wq6bH4/edit?gid=0#gid=0',
-    api_url: 'https://script.google.com/macros/s/AKfycbwlTZpSSvpBZkJsOK5GelxsX2GOMH5E6M2HdSk43N4/dev',
+    api_url: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec',
     application_id: '102',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
-    logo_url: '',
+    logo_url: 'https://ssahe.edu.in/ssit/',
     website: '',
     status: 'active'
   }
@@ -55,6 +55,15 @@ var DEFAULT_TENANTS = [
 function jsonOut(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonpOut(obj, callback) {
+  return ContentService.createTextOutput(String(callback || '') + '(' + JSON.stringify(obj) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function respondOut(obj, callback) {
+  return callback ? jsonpOut(obj, callback) : jsonOut(obj);
 }
 
 function nerveSs() {
@@ -150,24 +159,25 @@ function getApplicationFromGuid(guid) {
 function doGet(e) {
   try {
     var p = e && e.parameter ? e.parameter : {};
+    var callback = p.callback || '';
     if (p.setup === '1') {
       ensureNerveRegistry();
-      return jsonOut({ success: true, message: 'Nerve registry ready' });
+      return respondOut({ success: true, message: 'Nerve registry ready' }, callback);
     }
     if (p.listTenants === '1') {
-      return jsonOut({ success: true, tenants: getTenants() });
+      return respondOut({ success: true, tenants: getTenants() }, callback);
     }
     if (p.getApplicationFromGuid) {
-      return jsonOut(getApplicationFromGuid(p.getApplicationFromGuid));
+      return respondOut(getApplicationFromGuid(p.getApplicationFromGuid), callback);
     }
     if (p.guid) {
-      return jsonOut(getApplicationFromGuid(p.guid));
+      return respondOut(getApplicationFromGuid(p.guid), callback);
     }
-    return jsonOut({
+    return respondOut({
       success: true,
       message: 'Nerve registry is running',
       endpoints: ['?getApplicationFromGuid=GUID', '?listTenants=1']
-    });
+    }, callback);
   } catch (err) {
     return jsonOut({ success: false, message: 'Nerve doGet: ' + err });
   }
