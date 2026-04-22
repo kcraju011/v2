@@ -1,0 +1,1954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>BioAttend – SIT Tumkur</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#4f6ef7"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="BioAttend"/>
+<link rel="apple-touch-icon" href="/icon-192.png"/>
+<link rel="icon" type="image/png" href="/icon-192.png"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#050a1a;--card:#0d1530;--inp:#111d3a;--tab:#1a2a52;
+  --acc:#4f6ef7;--acc2:#7c3aed;--text:#e8eaf6;--muted:#6b7db3;
+  --border:#1e2f5a;--danger:#ef4444;--success:#22c55e;--warn:#f59e0b;
+  --rad:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Sora',sans-serif;background:var(--bg);min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;padding:12px;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 80% 50% at 20% -10%,rgba(79,110,247,.18) 0%,transparent 60%),
+             radial-gradient(ellipse 60% 40% at 80% 110%,rgba(124,58,237,.14) 0%,transparent 55%)}
+.card{position:relative;width:100%;max-width:460px;background:var(--card);
+  border:1px solid var(--border);border-radius:22px;overflow:hidden;
+  box-shadow:0 32px 80px rgba(0,0,0,.6);z-index:1;margin-bottom:12px;
+  animation:up .45s cubic-bezier(.22,1,.36,1) both}
+@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Header ── */
+.header{padding:24px 20px 16px;background:linear-gradient(160deg,#0d1a40,#080f2a);text-align:center}
+.logo-ring{width:54px;height:54px;margin:0 auto 10px;border-radius:50%;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 26px rgba(79,110,247,.5);animation:pulse 3s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 16px rgba(79,110,247,.4)}50%{box-shadow:0 0 34px rgba(79,110,247,.7)}}
+.logo-ring svg{width:26px;height:26px;fill:#fff}
+.logo-ring img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:none}
+.brand{font-size:20px;font-weight:700;color:#fff}
+.tagline{font-size:10.5px;color:var(--muted);margin-top:2px;letter-spacing:.8px;text-transform:uppercase}
+.college-badge{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:3px 9px;
+  background:rgba(79,110,247,.15);border:1px solid rgba(79,110,247,.3);border-radius:20px;
+  font-size:10px;color:var(--acc)}
+
+/* ── Tabs ── */
+.main-tabs{display:flex;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.main-tabs::-webkit-scrollbar{display:none}
+.mtab{flex-shrink:0;padding:10px 14px;background:transparent;border:none;cursor:pointer;
+  font-family:'Sora',sans-serif;font-size:11.5px;font-weight:500;color:var(--muted);
+  transition:color .2s,background .2s;white-space:nowrap;position:relative}
+.mtab.active{color:var(--acc);background:var(--tab)}
+.mtab.active::after{content:'';position:absolute;bottom:0;left:8px;right:8px;
+  height:2px;background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:2px 2px 0 0}
+
+/* ── Form body ── */
+.form-body{padding:18px 18px 22px}
+.pane{display:none}.pane.active{display:block;animation:fadeIn .25s ease both}
+@keyframes fadeIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:360px){.row2{grid-template-columns:1fr}}
+.section-label{font-size:10px;font-weight:600;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.field{margin-bottom:11px}
+.field label{display:block;font-size:10px;font-weight:600;letter-spacing:.8px;
+  text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.field label .req{color:var(--acc)}
+.field input,.field select,.field textarea{width:100%;padding:9px 12px;background:var(--inp);
+  border:1px solid var(--border);border-radius:var(--rad);color:var(--text);
+  font-family:'Sora',sans-serif;font-size:13px;outline:none;
+  transition:border-color .2s,box-shadow .2s}
+.field input::placeholder,.field textarea::placeholder{color:var(--muted);font-size:12px}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,110,247,.13)}
+.field select option{background:#1a2a52}
+.field input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.4)}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:38px}
+.pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  background:none;border:none;cursor:pointer;color:var(--muted);display:flex;align-items:center}
+.pw-eye:hover{color:var(--text)}
+
+/* ── Buttons ── */
+.btn{width:100%;padding:11px;border:none;border-radius:var(--rad);font-family:'Sora',sans-serif;
+  font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;gap:7px;transition:opacity .2s,transform .1s}
+.btn-primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;
+  box-shadow:0 4px 16px rgba(79,110,247,.3)}
+.btn-primary:hover{opacity:.9}.btn-primary:active{transform:scale(.98)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{background:var(--inp);border:1px solid var(--border);color:var(--muted);margin-top:8px}
+.btn-secondary:not(:disabled):hover{border-color:var(--acc);color:var(--acc)}
+.btn-secondary:disabled{opacity:.38;cursor:not-allowed}
+.btn-danger{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--danger);margin-top:8px}
+.btn-danger:hover{background:rgba(239,68,68,.18)}
+.btn-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--success)}
+.btn-success:hover{background:rgba(34,197,94,.18)}
+.btn-exit{width:100%;padding:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
+  border-radius:var(--rad);color:var(--danger);font-family:'Sora',sans-serif;font-size:13.5px;
+  font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:7px;margin-top:9px;transition:background .2s}
+.btn-exit:hover{background:rgba(239,68,68,.2)}
+.btn-exit:disabled{opacity:.42;cursor:not-allowed}
+
+.divider{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:10.5px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.hint{text-align:center;font-size:11px;color:var(--muted);margin-top:6px}
+
+/* ── Info / status ── */
+.info-box{border-radius:10px;padding:9px 12px;font-size:12px;margin-bottom:11px;
+  display:flex;align-items:flex-start;gap:8px}
+.info-box.blue{background:rgba(79,110,247,.1);border:1px solid rgba(79,110,247,.25);color:#a5b4fc}
+.info-box.green{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#86efac}
+.info-box.orange{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);color:#fcd34d}
+.info-box.red{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
+.info-box svg{flex-shrink:0;margin-top:1px}
+
+.loc-bar{display:flex;align-items:center;gap:6px;padding:7px 11px;border-radius:9px;
+  font-size:11px;margin-bottom:9px}
+.loc-bar.getting{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);color:var(--warn)}
+.loc-bar.ok{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:var(--success)}
+.loc-bar.fail{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:var(--danger)}
+
+/* ── Attendance card ── */
+.att-card{background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.3);
+  border-radius:12px;padding:13px 15px;margin-bottom:12px}
+.att-card .att-name{font-size:14px;font-weight:600;color:var(--success);margin-bottom:5px}
+.att-card .att-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);
+  padding:3px 0;border-bottom:1px solid rgba(34,197,94,.1)}
+.att-card .att-row:last-child{border:none}
+.att-card .att-val{color:var(--text);font-weight:500;text-align:right;max-width:55%;font-size:11px}
+
+/* ── Teacher dashboard ── */
+.dash-header{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:13px;padding-bottom:11px;border-bottom:1px solid var(--border)}
+.dash-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.dash-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.dash-logout{background:none;border:1px solid var(--border);border-radius:7px;padding:4px 9px;
+  cursor:pointer;color:var(--muted);font-size:11px;font-family:'Sora',sans-serif}
+.dash-logout:hover{color:var(--danger);border-color:var(--danger)}
+
+.sub-tabs{display:grid;grid-template-columns:repeat(4,1fr);background:var(--inp);
+  border-radius:9px;padding:3px;margin-bottom:13px;gap:2px}
+.sub-tab{padding:6px 0;background:transparent;border:none;cursor:pointer;
+  font-family:'Sora',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted);
+  border-radius:7px;transition:all .2s}
+.sub-tab.active{background:var(--tab);color:var(--acc)}
+.sub-pane{display:none}.sub-pane.active{display:block;animation:fadeIn .2s ease both}
+
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:11px}
+.stat-card{border-radius:10px;padding:9px 5px;text-align:center;border:1px solid}
+.stat-card.green{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.25)}
+.stat-card.red{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
+.stat-card.blue{background:rgba(79,110,247,.08);border-color:rgba(79,110,247,.25)}
+.stat-card.purple{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.25)}
+.stat-num{font-size:17px;font-weight:700;color:var(--text)}
+.stat-lbl{font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+
+.seg-control{display:inline-flex;background:var(--inp);border-radius:7px;padding:2px;gap:2px}
+.seg{padding:4px 12px;background:transparent;border:none;cursor:pointer;font-family:'Sora',sans-serif;
+  font-size:11px;font-weight:500;color:var(--muted);border-radius:5px;transition:all .2s}
+.seg.active{background:var(--tab);color:var(--acc)}
+.live-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.export-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;
+  background:rgba(79,110,247,.1);border:1px solid rgba(79,110,247,.3);border-radius:7px;
+  color:var(--acc);font-size:11px;font-family:'Sora',sans-serif;cursor:pointer}
+.export-btn:hover{background:rgba(79,110,247,.18)}
+
+/* ── Lists ── */
+.att-list{display:flex;flex-direction:column;gap:7px;max-height:280px;overflow-y:auto;margin-top:9px}
+.att-item{background:var(--inp);border:1px solid var(--border);border-radius:9px;
+  padding:9px 12px;display:flex;align-items:center;justify-content:space-between}
+.att-item.clickable{cursor:pointer}.att-item.clickable:hover{border-color:var(--acc)}
+.att-item .iname{font-size:12.5px;font-weight:500;color:var(--text)}
+.att-item .imeta{font-size:10.5px;color:var(--muted);margin-top:2px}
+.badge{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:20px;
+  background:rgba(34,197,94,.15);color:var(--success);border:1px solid rgba(34,197,94,.3)}
+.badge.absent{background:rgba(239,68,68,.15);color:var(--danger);border-color:rgba(239,68,68,.3)}
+.badge.closed{background:rgba(107,125,179,.15);color:var(--muted);border-color:var(--border)}
+
+/* Student search */
+#student-search{width:100%;background:var(--inp);border:1px solid var(--border);
+  border-radius:var(--rad);color:var(--text);font-family:'Sora',sans-serif;
+  font-size:12.5px;padding:8px 12px;outline:none;transition:border-color .2s;margin-bottom:9px}
+#student-search:focus{border-color:var(--acc)}
+#student-search::placeholder{color:var(--muted)}
+
+/* My attendance */
+.my-item{background:var(--inp);border:1px solid var(--border);border-radius:9px;
+  padding:9px 12px;margin-bottom:7px}
+.my-date{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:4px}
+.my-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding:2px 0}
+.my-row span:last-child{color:var(--text)}
+
+/* Session card */
+.sess-card{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);
+  border-radius:12px;padding:12px;margin-bottom:12px}
+.sess-subj{font-size:14px;font-weight:600;color:var(--success)}
+.sess-meta{font-size:11px;color:var(--muted);margin-top:3px}
+.sess-timer{font-size:19px;font-weight:700;color:var(--success);margin-top:5px;
+  font-variant-numeric:tabular-nums}
+.no-session{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);
+  border-radius:12px;padding:12px;text-align:center;color:var(--muted);font-size:12.5px;margin-bottom:12px}
+
+/* ── Device badge ── */
+.device-badge{display:flex;align-items:center;gap:6px;padding:7px 11px;
+  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+  border-radius:9px;margin-bottom:11px;font-size:11px;color:#86efac}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(50px);
+  background:#1a2a52;border:1px solid var(--acc);color:var(--text);padding:9px 18px;
+  border-radius:40px;font-size:12px;opacity:0;transition:opacity .3s,transform .3s;
+  z-index:9999;max-width:88vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.error{border-color:var(--danger)}
+#toast.success{border-color:var(--success)}
+#toast.warn{border-color:var(--warn)}
+
+/* ── Spinner ── */
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Offline ── */
+#offline-bar{display:none;background:#7f1d1d;color:#fca5a5;font-size:11.5px;
+  text-align:center;padding:5px;font-family:'Sora',sans-serif;
+  position:fixed;top:0;left:0;right:0;z-index:9999}
+#offline-bar.show{display:block}
+
+/* ── PWA banner ── */
+#pwa-banner{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;
+  padding:11px 15px;background:#0d1530;border-top:1px solid var(--border)}
+#pwa-banner.show{display:flex;align-items:center;gap:11px}
+.pwa-icon{width:38px;height:38px;border-radius:9px;flex-shrink:0}
+.pwa-text{flex:1}
+.pwa-text strong{display:block;font-size:12.5px;color:var(--text);font-weight:600}
+.pwa-text span{font-size:10.5px;color:var(--muted)}
+.pwa-install-btn{padding:7px 14px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+  border:none;border-radius:9px;color:#fff;font-family:'Sora',sans-serif;
+  font-size:11.5px;font-weight:600;cursor:pointer;flex-shrink:0}
+.pwa-dismiss{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<div id="offline-bar">📡 Offline — attendance requires internet</div>
+
+<div id="tenant-loader" class="info-box blue" style="max-width:460px;width:100%;margin:8px 0 12px;display:none;z-index:2">
+  <span class="spin"></span>
+  <span id="tenant-loader-text">Loading organizationâ€¦</span>
+</div>
+
+<div class="card">
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="logo-ring">
+      <img id="org-logo" alt="Organization logo"/>
+      <svg id="org-logo-fallback" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+    </div>
+    <div class="brand" id="org-name">BioAttend</div>
+    <div class="tagline" id="org-tagline">Biometric Attendance System</div>
+    <div class="college-badge" id="org-city-badge">
+      <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+      <span id="org-city-text">Loading...</span>
+    </div>
+  </div>
+
+  <!-- ── Main Tabs ── -->
+  <div class="main-tabs">
+    <button class="mtab active" id="mtab-signin"   onclick="switchMain('signin')">Sign In</button>
+    <button class="mtab" id="mtab-register" onclick="switchMain('register')">Register</button>
+  </div>
+
+  <div class="form-body">
+
+    <!-- ══════════════════════════════════════════════
+         SIGN IN — biometric only
+    ══════════════════════════════════════════════ -->
+    <div class="pane active" id="pane-signin">
+      <div id="loc-status-bar"></div>
+      <div id="att-success-card" style="display:none"></div>
+      <div id="student-att-panel" style="display:none"></div>
+      <div id="admin-panel" style="display:none"></div>
+
+      <div class="info-box blue">
+        <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+        <span>Enter your email then use fingerprint or Face ID to mark attendance.</span>
+      </div>
+
+      <div class="field">
+        <label>Email <span class="req">*</span></label>
+        <input type="email" id="si-email" placeholder="usn@sit.ac.in"/>
+      </div>
+
+      <button class="btn btn-primary" id="btn-bio-signin" onclick="handleBiometricSignIn()">
+        <svg width="17" height="17" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+        Mark Attendance with Fingerprint / Face ID
+      </button>
+
+      <div style="margin-top:12px;text-align:center">
+        <button onclick="toggleMyAtt()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;font-family:'Sora',sans-serif">
+          View my attendance history ↓
+        </button>
+        <div id="my-att-list" style="display:none;margin-top:9px;text-align:left"></div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         REGISTER — User table form
+         user_id(auto), institute_id, department_id, role_id,
+         full_name, dob, mobile, email, password_hash(auto),
+         biometric_code(post), device_identification(auto)
+    ══════════════════════════════════════════════ -->
+    <div class="pane" id="pane-register">
+      <div class="section-label">Basic Info</div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Name <span class="req">*</span></label>
+          <input type="text" id="r-name" placeholder="Enter your full name" maxlength="80" autocomplete="name" required/>
+        </div>
+        <div class="field">
+          <label>DOB <span class="req">*</span></label>
+          <input type="date" id="r-dob" required/>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Email <span class="req">*</span></label>
+        <input type="email" id="r-email" placeholder="name@organization.com" maxlength="120" autocomplete="email" required/>
+      </div>
+
+      <div class="field">
+        <label>Mobile <span class="req">*</span></label>
+        <input type="tel" id="r-mobile" placeholder="+91 9876543210" maxlength="20" autocomplete="tel" required/>
+      </div>
+
+      <div class="section-label">Organization</div>
+
+      <div class="row2">
+        <div class="field">
+          <label id="r-org-name-label">Organization Name <span class="req">*</span></label>
+          <input type="text" id="r-institute" value="" placeholder="Enter organization name" maxlength="120" required/>
+        </div>
+        <div class="field">
+          <label>Org Type <span class="req">*</span></label>
+          <select id="r-org-type" required onchange="updateRegisterFormByRole()">
+            <option value="">Select...</option>
+            <option value="school">School</option>
+            <option value="college">College</option>
+            <option value="company">Company / Office</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-label">Role & Department</div>
+
+      <div class="field">
+        <label id="r-role-label">Role <span class="req">*</span></label>
+        <select id="r-role" required onchange="updateRegisterFormByRole()">
+          <option value="">Select organization type first...</option>
+        </select>
+      </div>
+      <div class="hint">Each organization can have only one admin account.</div>
+
+      <div class="field">
+        <label id="r-dept-label">Department <span class="req">*</span></label>
+        <select id="r-dept" required>
+          <option value="">Loading departments...</option>
+        </select>
+      </div>
+
+      <div class="section-label">Location</div>
+      <div class="hint" id="r-location-hint">Admins can add labs, classrooms, and office locations after biometric sign-in.</div>
+
+      <div class="section-label">Security</div>
+
+      <div class="field">
+        <label>Password <span class="req">*</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">(min 8 chars)</span></label>
+        <div class="pw-wrap">
+          <input type="password" id="r-password" placeholder="Create a strong password" minlength="8" maxlength="64" autocomplete="new-password" required/>
+          <button class="pw-eye" onclick="togglePw('r-password')" type="button">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Confirm Password <span class="req">*</span></label>
+        <div class="pw-wrap">
+          <input type="password" id="r-confirm-password" placeholder="Re-enter your password" minlength="8" maxlength="64" autocomplete="new-password" required/>
+          <button class="pw-eye" onclick="togglePw('r-confirm-password')" type="button">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="section-label">Action</div>
+
+      <button class="btn btn-primary" id="btn-register" onclick="handleRegister()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Create Account
+      </button>
+
+      <div class="section-label" style="margin-top:14px">Biometric</div>
+
+      <button class="btn btn-secondary" id="btn-bio-reg" disabled onclick="handleBiometricRegister()">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1C7.03 1 3 5.03 3 10c0 3.31 1.8 6.2 4.47 7.79C7.17 18.52 7 19.24 7 20v2h2v-2c0-.37.1-.72.27-1.03A8.96 8.96 0 0012 19a8.96 8.96 0 002.73-.03c.17.31.27.66.27 1.03v2h2v-2c0-.76-.17-1.48-.47-2.21C19.2 16.2 21 13.31 21 10c0-4.97-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm0-12c-2.76 0-5 2.24-5 5h2c0-1.65 1.35-3 3-3s3 1.35 3 3h2c0-2.76-2.24-5-5-5zm0 4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+        Register Fingerprint / Face ID
+      </button>
+      <div class="hint" id="bio-hint">Create your account first, then register biometric</div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         TEACHER PANEL
+    ══════════════════════════════════════════════ -->
+    <div class="pane" id="pane-teacher">
+
+      <!-- Login -->
+      <div id="t-login-section">
+        <div class="info-box blue">
+          <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <span>Sign in with your teacher account.</span>
+        </div>
+        <div class="field"><label>Email</label><input type="email" id="t-email" placeholder="teacher@sit.ac.in"/></div>
+        <div class="field"><label>Password</label>
+          <div class="pw-wrap">
+            <input type="password" id="t-password" placeholder="••••••••"/>
+            <button class="pw-eye" onclick="togglePw('t-password')" type="button">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-t-login" onclick="handleTeacherLogin()">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+          Teacher Sign In
+        </button>
+      </div>
+
+      <!-- Dashboard -->
+      <div id="t-dashboard" style="display:none">
+        <div class="dash-header">
+          <div><div class="dash-name" id="t-welcome"></div><div class="dash-sub" id="teacher-dashboard-subtitle">Teacher Dashboard</div></div>
+          <button class="dash-logout" onclick="teacherLogout()">Logout</button>
+        </div>
+        <div class="sub-tabs">
+          <button class="sub-tab active" id="stab-session"  onclick="switchSub('session')">Session</button>
+          <button class="sub-tab" id="stab-live"     onclick="switchSub('live')">Live</button>
+          <button class="sub-tab" id="stab-history"  onclick="switchSub('history')">History</button>
+          <button class="sub-tab" id="stab-students" onclick="switchSub('students')">Students</button>
+        </div>
+
+        <!-- Session sub-pane -->
+        <div class="sub-pane active" id="sp-session">
+          <div id="active-sess-display"></div>
+          <div id="open-sess-form">
+            <div class="field"><label>Subject / Class <span class="req">*</span></label>
+              <input type="text" id="t-subject" placeholder="e.g. Data Structures – 3CSE-B"/></div>
+            <div class="field"><label>Window</label>
+              <select id="t-window">
+                <option value="5">5 minutes</option>
+                <option value="10" selected>10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+                <option value="30">30 minutes</option>
+              </select>
+            </div>
+            <button class="btn btn-success" id="btn-open-sess" onclick="openSession()">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              Open Attendance Session
+            </button>
+          </div>
+        </div>
+
+        <!-- Live sub-pane -->
+        <div class="sub-pane" id="sp-live">
+          <div id="live-info" class="no-session">No active session</div>
+          <div class="stats-row" id="live-stats" style="display:none">
+            <div class="stat-card green"><div class="stat-num" id="sp">0</div><div class="stat-lbl">Present</div></div>
+            <div class="stat-card red"><div class="stat-num" id="sa">0</div><div class="stat-lbl">Absent</div></div>
+            <div class="stat-card blue"><div class="stat-num" id="st">0</div><div class="stat-lbl">Total</div></div>
+            <div class="stat-card purple"><div class="stat-num" id="spc">0%</div><div class="stat-lbl">Rate</div></div>
+          </div>
+          <div class="live-toolbar" id="live-toolbar" style="display:none">
+            <div class="seg-control">
+              <button class="seg active" id="seg-p" onclick="showLive('present')">Present</button>
+              <button class="seg" id="seg-a" onclick="showLive('absent')">Absent</button>
+            </div>
+            <button class="export-btn" onclick="exportLive()">↓ Export</button>
+          </div>
+          <div id="live-list" class="att-list"></div>
+          <div id="live-refresh" style="display:none;text-align:center;margin-top:9px">
+            <button onclick="refreshLive()" style="background:none;border:1px solid var(--border);border-radius:7px;padding:5px 12px;color:var(--muted);font-size:11px;cursor:pointer;font-family:'Sora',sans-serif">↻ Refresh</button>
+            <div id="live-updated" style="font-size:10px;color:var(--muted);margin-top:3px"></div>
+          </div>
+        </div>
+
+        <!-- History sub-pane -->
+        <div class="sub-pane" id="sp-history">
+          <div class="field"><label>Date</label>
+            <input type="date" id="hist-date" onchange="loadHistory()"/>
+          </div>
+          <div id="hist-list" class="att-list"></div>
+          <div style="text-align:right;margin-top:8px;display:none" id="hist-export">
+            <button class="export-btn" onclick="exportHistory()">↓ Export CSV</button>
+          </div>
+        </div>
+
+        <!-- Students sub-pane -->
+        <div class="sub-pane" id="sp-students">
+          <input type="text" id="student-search" placeholder="Search name, email or dept…" oninput="filterStudents()"/>
+          <div id="stud-count" style="font-size:11px;color:var(--muted);margin-bottom:7px"></div>
+          <div id="stud-list" class="att-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         ADMIN — manage lookup tables
+    ══════════════════════════════════════════════ -->
+    <div class="pane" id="pane-admin">
+      <div class="section-label">Database administration</div>
+
+      <!-- Admin sub-tabs -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="seg active" id="atab-dept"    onclick="switchAdmin('dept')"   style="padding:5px 10px">Departments</button>
+        <button class="seg" id="atab-loc"     onclick="switchAdmin('loc')"    style="padding:5px 10px">Locations</button>
+        <button class="seg" id="atab-ulmap"   onclick="switchAdmin('ulmap')"  style="padding:5px 10px">User-Loc Map</button>
+        <button class="seg" id="atab-atttype" onclick="switchAdmin('atttype')" style="padding:5px 10px">Att. Type</button>
+      </div>
+
+      <!-- Departments form -->
+      <div id="ap-dept" class="sub-pane active">
+        <div class="section-label">Add Department</div>
+        <div class="row2">
+          <div class="field"><label>department_id <span class="req">*</span></label>
+            <input type="text" id="ad-id" placeholder="e.g. CSE"/></div>
+          <div class="field"><label>name <span class="req">*</span></label>
+            <input type="text" id="ad-name" placeholder="Dept name"/></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>in_charge</label>
+            <input type="text" id="ad-incharge" placeholder="HOD name"/></div>
+          <div class="field"><label>email</label>
+            <input type="email" id="ad-email" placeholder="hod@sit.ac.in"/></div>
+        </div>
+        <button class="btn btn-primary" onclick="addDepartment()">Add Department</button>
+        <div id="dept-list" class="att-list" style="margin-top:12px"></div>
+        <button onclick="loadDepts()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;font-family:'Sora',sans-serif;margin-top:6px;display:block">↻ Refresh list</button>
+      </div>
+
+      <!-- Attendance Locations form -->
+      <div id="ap-loc" class="sub-pane">
+        <div class="section-label">Add Attendance Location</div>
+        <div class="row2">
+          <div class="field"><label>attendance_location_id <span class="req">*</span></label>
+            <input type="text" id="al-id" placeholder="LOC004"/></div>
+          <div class="field"><label>name <span class="req">*</span></label>
+            <input type="text" id="al-name" placeholder="Lab / Room name"/></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>latitude <span class="req">*</span></label>
+            <input type="number" id="al-lat" step="0.00001" placeholder="13.32603"/></div>
+          <div class="field"><label>longitude <span class="req">*</span></label>
+            <input type="number" id="al-lng" step="0.00001" placeholder="77.12621"/></div>
+        </div>
+        <button class="btn btn-primary" onclick="addLocation()">Add Location</button>
+        <div id="loc-list" class="att-list" style="margin-top:12px"></div>
+        <button onclick="loadLocs()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;font-family:'Sora',sans-serif;margin-top:6px;display:block">↻ Refresh list</button>
+      </div>
+
+      <!-- User Attendance Location Map form -->
+      <div id="ap-ulmap" class="sub-pane">
+        <div class="section-label">Map User → Location</div>
+        <div class="field"><label>user_id <span class="req">*</span></label>
+          <input type="text" id="ulm-uid" placeholder="u_1234_abcde"/></div>
+        <div class="row2">
+          <div class="field"><label>attendance_location_id <span class="req">*</span></label>
+            <input type="text" id="ulm-lid" placeholder="LOC001"/></div>
+          <div class="field"><label>allowed_distance (m)</label>
+            <input type="number" id="ulm-dist" value="200" placeholder="200"/></div>
+        </div>
+        <button class="btn btn-primary" onclick="addUserLocMap()">Add Mapping</button>
+        <div class="info-box orange" style="margin-top:10px">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <span>user_id is auto-generated during registration. You can copy it from the Users sheet.</span>
+        </div>
+      </div>
+
+      <!-- Attendance Type form -->
+      <div id="ap-atttype" class="sub-pane">
+        <div class="section-label">Attendance Types (seeded automatically)</div>
+        <div class="att-list">
+          <div class="att-item"><div><div class="iname">ATT_TYPE_001</div><div class="imeta">type: entry</div></div><span class="badge">seeded</span></div>
+          <div class="att-item"><div><div class="iname">ATT_TYPE_002</div><div class="imeta">type: exit</div></div><span class="badge">seeded</span></div>
+        </div>
+        <div class="info-box blue" style="margin-top:10px">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <span>Entry and Exit types are seeded automatically when you run setupSheets from Apps Script editor.</span>
+        </div>
+      </div>
+
+    </div><!-- /pane-admin -->
+  </div><!-- /form-body -->
+</div><!-- /card -->
+
+<div id="pwa-banner">
+  <img src="/icon-192.png" class="pwa-icon" alt="BioAttend"/>
+  <div class="pwa-text"><strong>Install BioAttend</strong><span>Add to home screen</span></div>
+  <button class="pwa-install-btn" id="pwa-install-btn">Install</button>
+  <button class="pwa-dismiss" id="pwa-dismiss">✕</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────
+const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
+const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
+const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const FALLBACK_TENANTS = {
+  '1': {
+    success: true,
+    guid: '1',
+    orgType: 'college',
+    institution: { name: 'BioAttend Main', city: 'Tumakuru', logoUrl: '', website: '', address: 'Main tenant workspace' },
+    application: { id: 101, name: 'Attendance monitoring', description: 'Multi-tenant biometric attendance monitoring' },
+    apiUrl: DEFAULT_TENANT_API
+  },
+  '2': {
+    success: true,
+    guid: '2',
+    orgType: 'college',
+    institution: { name: 'SIT', city: 'Tumakuru', logoUrl: '', website: '', address: 'Siddaganga Institute of Technology' },
+    application: { id: 102, name: 'Attendance monitoring', description: 'Biometric attendance for students, teachers and staff' },
+    apiUrl: DEFAULT_TENANT_API
+  },
+  '3': {
+    success: true,
+    guid: '3',
+    orgType: 'college',
+    institution: { name: 'SSIT', city: 'Tumakuru', logoUrl: '', website: '', address: 'Sri Siddhartha Institute of Technology' },
+    application: { id: 103, name: 'Attendance monitoring', description: 'Biometric attendance for multi-tenant institutions' },
+    apiUrl: DEFAULT_TENANT_API
+  }
+};
+
+// ── State ─────────────────────────────────────────────────────
+let markedUserId  = null;
+let registeredUid = null;
+let teacherData   = null;
+let sessionTimer  = null;
+let liveSessionId = null;
+let liveData      = null;
+let liveTab       = 'present';
+let allStudents   = [];
+let historyData   = [];
+let deviceId      = null;
+let signedInUser  = null;
+let TENANT_API    = DEFAULT_TENANT_API;
+let tenantState   = {
+  guid: '',
+  orgType: '',
+  institution: {},
+  application: {},
+  roles: [],
+  departments: [],
+  attendanceLocations: []
+};
+
+// ── API ───────────────────────────────────────────────────────
+function readGuidFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get('GUID') || params.get('guid') || params.get('q') || '1').trim();
+}
+
+function tenantCacheKey(guid) {
+  return `tenant_${guid}`;
+}
+
+function setTenantLoading(on, text) {
+  const box = document.getElementById('tenant-loader');
+  const label = document.getElementById('tenant-loader-text');
+  if (!box) return;
+  if (label && text) label.textContent = text;
+  box.style.display = on ? 'flex' : 'none';
+}
+
+function getAuthToken() {
+  if (teacherData?.authToken) return teacherData.authToken;
+  try {
+    return localStorage.getItem('ba_auth_token') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function persistTeacherSession(data) {
+  if (!data?.authToken) return;
+  try {
+    localStorage.setItem('ba_auth_token', data.authToken);
+    localStorage.setItem('ba_teacher_session', JSON.stringify(data));
+  } catch (e) {}
+}
+
+function clearTeacherSession() {
+  try {
+    localStorage.removeItem('ba_auth_token');
+    localStorage.removeItem('ba_teacher_session');
+  } catch (e) {}
+}
+
+async function api(payload) {
+  if (!TENANT_API) throw new Error('Tenant API is not initialized');
+  const requestPayload = { ...(payload || {}) };
+  if (!requestPayload.guid && tenantState.guid) requestPayload.guid = tenantState.guid;
+  if (!requestPayload.authToken) {
+    const authToken = getAuthToken();
+    if (authToken) requestPayload.authToken = authToken;
+  }
+  const url = TENANT_API + '?data=' + encodeURIComponent(JSON.stringify(requestPayload));
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const txt = await res.text();
+  try { return JSON.parse(txt); } catch(e) { throw new Error('Server returned invalid response'); }
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  clearTimeout(t._t); t._t = setTimeout(() => t.className = '', 3500);
+}
+
+function setLoading(id, on) {
+  const b = document.getElementById(id); if (!b) return;
+  if (on) { b._h = b.innerHTML; b.innerHTML = '<span class="spin"></span> Please wait…'; b.disabled = true; }
+  else { b.innerHTML = b._h || b.innerHTML; b.disabled = false; }
+}
+
+function togglePw(id) { const i = document.getElementById(id); i.type = i.type === 'password' ? 'text' : 'password'; }
+function fmtTime(s) { const m = Math.floor(Math.max(0,s)/60), x = Math.max(0,s)%60; return String(m).padStart(2,'0')+':'+String(x).padStart(2,'0'); }
+
+function getFallbackTenantProfile(guid) {
+  return FALLBACK_TENANTS[guid] || FALLBACK_TENANTS['1'];
+}
+
+function readCachedTenant(guid) {
+  try {
+    const raw = localStorage.getItem(tenantCacheKey(guid));
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (!cached?.expiresAt || Date.now() > cached.expiresAt) {
+      localStorage.removeItem(tenantCacheKey(guid));
+      return null;
+    }
+    return cached.data || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function cacheTenantProfile(guid, data) {
+  try {
+    localStorage.setItem(tenantCacheKey(guid), JSON.stringify({
+      expiresAt: Date.now() + TENANT_CACHE_TTL_MS,
+      data
+    }));
+  } catch (e) {}
+}
+
+async function fetchTenantProfile(guid) {
+  if (NERVE_URL) {
+    const joiner = NERVE_URL.includes('?') ? '&' : '?';
+    const response = await fetch(`${NERVE_URL}${joiner}getApplicationFromGuid=${encodeURIComponent(guid)}`);
+    if (!response.ok) throw new Error('Tenant lookup failed with HTTP ' + response.status);
+    const payload = await response.json();
+    if (payload?.success && payload?.apiUrl) return payload;
+  }
+  return getFallbackTenantProfile(guid);
+}
+
+function applyTenantBranding(profile) {
+  const institution = profile?.institution || {};
+  const application = profile?.application || {};
+  tenantState.guid = String(profile?.guid || tenantState.guid || readGuidFromUrl());
+  tenantState.orgType = String(profile?.orgType || institution?.orgType || '').toLowerCase();
+  tenantState.institution = institution;
+  tenantState.application = application;
+  TENANT_API = profile?.apiUrl || DEFAULT_TENANT_API;
+
+  const orgName = institution.name || 'BioAttend';
+  const subtitle = application.description || 'Biometric Attendance System';
+  const city = institution.city || tenantState.orgType || 'Organization';
+  const logo = institution.logoUrl || '';
+
+  document.title = `${orgName} | BioAttend`;
+  const brandEl = document.getElementById('org-name');
+  const tagEl = document.getElementById('org-tagline');
+  const cityEl = document.getElementById('org-city-text');
+  const teacherSubtitle = document.getElementById('teacher-dashboard-subtitle');
+  const orgInput = document.getElementById('r-institute');
+  const orgTypeEl = document.getElementById('r-org-type');
+  const logoEl = document.getElementById('org-logo');
+  const fallbackEl = document.getElementById('org-logo-fallback');
+
+  if (brandEl) brandEl.textContent = orgName;
+  if (tagEl) tagEl.textContent = subtitle;
+  if (cityEl) cityEl.textContent = city;
+  if (teacherSubtitle) teacherSubtitle.textContent = `Teacher Dashboard · ${orgName}`;
+  if (orgInput) {
+    orgInput.value = orgName;
+    orgInput.readOnly = true;
+  }
+  if (orgTypeEl && tenantState.orgType) {
+    orgTypeEl.value = tenantState.orgType;
+    orgTypeEl.disabled = true;
+  }
+  if (logoEl && fallbackEl) {
+    if (logo) {
+      logoEl.src = logo;
+      logoEl.style.display = 'block';
+      fallbackEl.style.display = 'none';
+    } else {
+      logoEl.removeAttribute('src');
+      logoEl.style.display = 'none';
+      fallbackEl.style.display = 'block';
+    }
+  }
+}
+
+async function bootTenant() {
+  const guid = readGuidFromUrl();
+  tenantState.guid = guid;
+  setTenantLoading(true, 'Loading organization...');
+  try {
+    const cached = readCachedTenant(guid);
+    const tenantProfile = cached || await fetchTenantProfile(guid);
+    if (!tenantProfile?.apiUrl && !tenantProfile?.institution) throw new Error('Tenant profile is incomplete');
+    applyTenantBranding({ ...tenantProfile, guid });
+    cacheTenantProfile(guid, { ...tenantProfile, guid });
+    await loadRegisterLookups();
+  } catch (e) {
+    applyTenantBranding({ ...getFallbackTenantProfile(guid), guid });
+    toast('Using fallback tenant configuration', 'warn');
+    await loadRegisterLookups();
+  } finally {
+    setTenantLoading(false);
+  }
+}
+
+// ── Tab navigation ────────────────────────────────────────────
+function switchMain(tab) {
+  ['signin','register'].forEach(t => {
+    const pane = document.getElementById('pane-'+t);
+    const tabBtn = document.getElementById('mtab-'+t);
+    if (pane) pane.classList.toggle('active', t===tab);
+    if (tabBtn) tabBtn.classList.toggle('active', t===tab);
+  });
+  if (tab === 'register') loadRegisterLookups();
+}
+
+function switchSub(tab) {
+  ['session','live','history','students'].forEach(t => {
+    document.getElementById('sp-'+t).classList.toggle('active', t===tab);
+    document.getElementById('stab-'+t).classList.toggle('active', t===tab);
+  });
+  if (tab==='live')     refreshLive();
+  if (tab==='history')  { document.getElementById('hist-date').value = new Date().toISOString().slice(0,10); loadHistory(); }
+  if (tab==='students') loadStudents();
+}
+
+function switchAdmin(tab) {
+  ['dept','loc','ulmap','atttype'].forEach(t => {
+    document.getElementById('ap-'+t).classList.toggle('active', t===tab);
+    document.getElementById('atab-'+t).classList.toggle('active', t===tab);
+  });
+  if (tab==='dept')   loadDepts();
+  if (tab==='loc')    loadLocs();
+}
+
+// ── Device fingerprint ────────────────────────────────────────
+async function getDeviceId() {
+  if (deviceId) return deviceId;
+  try { const s = localStorage.getItem('ba_did'); if(s){deviceId=s;return s;} } catch(e){}
+  const cv = document.createElement('canvas'), c = cv.getContext('2d');
+  c.fillText('BioAttend',2,2);
+  const raw = [navigator.userAgent,navigator.language,screen.width+'x'+screen.height,
+    new Date().getTimezoneOffset(),cv.toDataURL().slice(-40)].join('|');
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+  deviceId = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,16);
+  try { localStorage.setItem('ba_did', deviceId); } catch(e) {}
+  return deviceId;
+}
+
+// ── GPS (fine, watchPosition) ─────────────────────────────────
+function getLocation() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve({latitude:'',longitude:'',accuracy:null,denied:false});
+    let best=null, wid=null, done=false;
+    const finish = r => {
+      if(done)return; done=true;
+      if(wid!==null)try{navigator.geolocation.clearWatch(wid);}catch(e){}
+      resolve(r||{latitude:'',longitude:'',accuracy:null,denied:false});
+    };
+    wid = navigator.geolocation.watchPosition(
+      pos => {
+        const r={latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,denied:false,address:''};
+        if(!best||r.accuracy<best.accuracy)best=r;
+        if(r.accuracy<=50)finish(best);
+      },
+      err => {
+        if(err.code===1)finish({latitude:'',longitude:'',accuracy:null,denied:true});
+        else finish(best||{latitude:'',longitude:'',accuracy:null,denied:false});
+      },
+      {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    );
+    setTimeout(()=>finish(best),10000);
+  });
+}
+
+async function getLocationWithAddress() {
+  const loc = await getLocation();
+  if(loc.denied){showLocBar('fail','Location blocked — allow in browser settings and retry');return loc;}
+  if(!loc.latitude)return loc;
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${loc.latitude}&lon=${loc.longitude}&format=json`,{headers:{'Accept-Language':'en'}});
+    const d = await r.json();
+    loc.address = d.display_name ? d.display_name.split(',').slice(0,3).join(',').trim() : '';
+  } catch(e){loc.address='';}
+  return loc;
+}
+
+function showLocBar(state,msg,accuracy){
+  const el=document.getElementById('loc-status-bar');if(!el)return;
+  const icons={getting:'📡',ok:'📍',fail:'⚠️'};
+  const acc=accuracy?` <span style="opacity:.6;font-size:10px">±${Math.round(accuracy)}m</span>`:'';
+  el.innerHTML=`<div class="loc-bar ${state}">${icons[state]||''} ${msg}${acc}</div>`;
+}
+
+// ── Attendance card (shown after marking) ─────────────────────
+function showAttendanceCard(data, userId) {
+  markedUserId = userId;
+  const el = document.getElementById('att-success-card');
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="att-card">
+      <div class="att-name">✓ Attendance Marked</div>
+      <div class="att-row"><span>full_name</span><span class="att-val">${data.name||''}</span></div>
+      <div class="att-row"><span>attendance_date</span><span class="att-val">${data.date||''}</span></div>
+      <div class="att-row"><span>entry_time</span><span class="att-val">${data.time||''}</span></div>
+      <div class="att-row"><span>address</span><span class="att-val">${data.location||'not captured'}</span></div>
+      <div class="att-row"><span>distance_from_centre</span><span class="att-val">${data.distanceFromCentre||'—'} m</span></div>
+      <div class="att-row"><span>login_method</span><span class="att-val">${data.method||'biometric'}</span></div>
+      <div class="att-row"><span>type_attendance</span><span class="att-val">entry</span></div>
+    </div>
+    <button class="btn-exit" id="btn-exit" onclick="handleExit()">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Mark Exit (leaving classroom)
+    </button>`;
+  // Hide form
+  const ef = document.getElementById('si-email');
+  if(ef&&ef.closest('.field'))ef.closest('.field').style.display='none';
+  const ib = document.querySelector('#pane-signin .info-box');
+  if(ib)ib.style.display='none';
+  const bb = document.getElementById('btn-bio-signin');
+  if(bb)bb.style.display='none';
+  try{
+    sessionStorage.setItem('ba_uid',   userId);
+    sessionStorage.setItem('ba_name',  data.name||'');
+    sessionStorage.setItem('ba_date',  data.date||'');
+    sessionStorage.setItem('ba_time',  data.time||'');
+    sessionStorage.setItem('ba_loc',   data.location||'');
+    sessionStorage.setItem('ba_meth',  data.method||'biometric');
+    sessionStorage.setItem('ba_dist',  data.distanceFromCentre||'');
+  }catch(e){}
+}
+
+function restoreSignInForm() {
+  const card=document.getElementById('att-success-card');if(card)card.style.display='none';
+  const lb=document.getElementById('loc-status-bar');if(lb)lb.innerHTML='';
+  const ef=document.getElementById('si-email');
+  if(ef&&ef.closest('.field'))ef.closest('.field').style.display='';
+  const ib=document.querySelector('#pane-signin .info-box');if(ib)ib.style.display='';
+  const bb=document.getElementById('btn-bio-signin');if(bb){bb.style.display='';bb.disabled=false;}
+  if(ef)ef.value='';
+  markedUserId=null;
+  try{['ba_uid','ba_name','ba_date','ba_time','ba_loc','ba_meth','ba_dist'].forEach(k=>sessionStorage.removeItem(k));}catch(e){}
+}
+
+// ════════════════════════════════════════════
+// BIOMETRIC SIGN IN
+// Sends: getBiometric → markEntry → Attendance + LocationMonitor sheets
+// ════════════════════════════════════════════
+function isValidRegistrationName(value) {
+  return /^[A-Za-z][A-Za-z .'-]{1,79}$/.test(value);
+}
+
+function isValidRegistrationEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidRegistrationMobile(value) {
+  return /^[0-9+\-\s]{7,20}$/.test(value);
+}
+
+function isValidOrganizationName(value) {
+  return /^[A-Za-z0-9][A-Za-z0-9 .,&()'/-]{1,119}$/.test(value);
+}
+
+function isValidDepartmentValue(value) {
+  return /^[A-Za-z0-9_. -]{2,120}$/.test(String(value || '').trim());
+}
+
+function syncOrganizationName() {
+  const orgEl = document.getElementById('r-institute');
+  if (!orgEl) return;
+  if (!orgEl.value) orgEl.value = '';
+}
+
+const COMPANY_DEPARTMENT_OPTIONS = [
+  { value: 'frontend_developer', label: 'Frontend Developer' },
+  { value: 'backend_developer', label: 'Backend Developer' },
+  { value: 'full_stack_developer', label: 'Full Stack Developer' },
+  { value: 'ui_ux_designer', label: 'UI/UX Designer' },
+  { value: 'hr', label: 'HR' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'operations', label: 'Operations' }
+];
+
+const SCHOOL_ROLE_OPTIONS = [
+  { value: 'student', label: 'Student' },
+  { value: 'teacher', label: 'Teacher' },
+  { value: 'admin', label: 'Admin (Manage labs/classrooms)' }
+];
+
+const COMPANY_ROLE_OPTIONS = [
+  { value: 'frontend_developer', label: 'Frontend Developer' },
+  { value: 'backend_developer', label: 'Backend Developer' },
+  { value: 'data_engineer', label: 'Data Engineer' },
+  { value: 'admin', label: 'Admin (Manage office locations)' }
+];
+
+let registerLookupState = {
+  roles: [],
+  departments: [],
+  locations: []
+};
+
+function normalizeCode(value) {
+  return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function renderRoleOptions(options, placeholder) {
+  const roleEl = document.getElementById('r-role');
+  if (!roleEl) return;
+  roleEl.innerHTML = `<option value="">${placeholder || 'Select...'}</option>` + options.map(opt => {
+    const value = opt.role_id || opt.value || '';
+    const label = opt.name || opt.label || value;
+    return `<option value="${value}">${label}</option>`;
+  }).join('');
+}
+
+function renderDepartmentOptions(options, placeholder) {
+  const deptEl = document.getElementById('r-dept');
+  if (!deptEl) return;
+  deptEl.innerHTML = `<option value="">${placeholder || 'Select...'}</option>` + options.map(opt => {
+    const value = opt.department_id || opt.value || '';
+    const label = opt.name || opt.label || value;
+    return `<option value="${value}">${label}</option>`;
+  }).join('');
+}
+
+function roleNameOf(userOrRole) {
+  const raw = String(
+    userOrRole?.roleKey ||
+    userOrRole?.roleName ||
+    userOrRole?.roleId ||
+    userOrRole?.name ||
+    userOrRole ||
+    ''
+  ).trim().toLowerCase();
+  return raw;
+}
+
+function isAdminRole(userOrRole) {
+  return roleNameOf(userOrRole) === 'admin';
+}
+
+function isTeacherRole(userOrRole) {
+  return roleNameOf(userOrRole) === 'teacher';
+}
+
+function getTenantRoleOptions() {
+  return (registerLookupState.roles || []).map(role => ({
+    value: role.role_id || role.value || '',
+    label: role.name || role.label || role.role_id || ''
+  })).filter(role => role.value && role.label);
+}
+
+function getRolePlaceholder() {
+  if (tenantState.orgType === 'company') return 'Select company role...';
+  if (tenantState.orgType === 'school') return 'Select school role...';
+  if (tenantState.orgType === 'college') return 'Select institution role...';
+  return 'Select role...';
+}
+
+function updateRegisterFormByRole() {
+  const roleEl = document.getElementById('r-role');
+  const orgTypeEl = document.getElementById('r-org-type');
+  const orgInput = document.getElementById('r-institute');
+  const orgLabel = document.getElementById('r-org-name-label');
+  const deptLabel = document.getElementById('r-dept-label');
+  const locationHint = document.getElementById('r-location-hint');
+  if (!roleEl || !orgTypeEl || !orgInput || !orgLabel || !deptLabel) return;
+
+  const orgType = String(tenantState.orgType || orgTypeEl.value || '').toLowerCase();
+  const selectedRole = String(roleEl.value || '');
+  const roleOptions = getTenantRoleOptions();
+  const fallbackRoleOptions = orgType === 'company' ? COMPANY_ROLE_OPTIONS : SCHOOL_ROLE_OPTIONS;
+  const finalRoleOptions = roleOptions.length ? roleOptions : fallbackRoleOptions;
+
+  renderRoleOptions(finalRoleOptions, getRolePlaceholder());
+  if (finalRoleOptions.some(opt => String(opt.value) === selectedRole)) roleEl.value = selectedRole;
+
+  orgLabel.innerHTML = `${orgType === 'company' ? 'Company' : 'Organization'} Name <span class="req">*</span>`;
+  orgInput.placeholder = orgType === 'company' ? 'Company name' : 'Organization name';
+  orgInput.readOnly = !!tenantState.institution?.name;
+  if (tenantState.institution?.name) orgInput.value = tenantState.institution.name;
+
+  deptLabel.innerHTML = `${orgType === 'company' ? 'Department / Team' : 'Department'} <span class="req">*</span>`;
+  if (registerLookupState.departments.length) {
+    renderDepartmentOptions(registerLookupState.departments, orgType === 'company' ? 'Select department or team...' : 'Select department...');
+  } else if (orgType === 'company') {
+    renderDepartmentOptions(COMPANY_DEPARTMENT_OPTIONS, 'Select department or team...');
+  } else {
+    renderDepartmentOptions([], 'No departments configured');
+  }
+
+  if (locationHint) {
+    locationHint.textContent = orgType === 'company'
+      ? 'Office locations are loaded from the tenant workspace after sign-in.'
+      : 'Labs, classrooms, and attendance points are loaded from the tenant workspace.';
+  }
+}
+
+function renderStudentAttendancePanel(user, locations) {
+  const panel = document.getElementById('student-att-panel');
+  if (!panel) return;
+  const deptCode = normalizeCode(user.deptId);
+  const opts = locations.map(loc => `<option value="${loc.attendance_location_id}">${loc.name}</option>`).join('');
+  panel.innerHTML = `
+    <div class="section-label">Attendance Workspace</div>
+    <div class="info-box green">
+      <span>Signed in as ${user.name} · Department: ${user.deptId || 'N/A'}</span>
+    </div>
+    <div class="field">
+      <label>Classroom / Lab <span class="req">*</span></label>
+      <select id="student-location-select">
+        <option value="">Select your ${deptCode || 'department'} location...</option>
+        ${opts}
+      </select>
+    </div>
+    <div class="hint">Only locations matching your department are shown, for example ${deptCode || 'CSE'}001.</div>
+    <button class="btn btn-primary" id="btn-student-attendance" onclick="submitStudentAttendance()">
+      Mark Attendance
+    </button>
+    <button class="btn btn-secondary" onclick="resetBiometricWorkspace()">Back</button>
+  `;
+  panel.style.display = 'block';
+}
+
+function applyRoleBasedUi(user, locations) {
+  if (isAdminRole(user)) {
+    renderAdminPanel(user);
+    return;
+  }
+  renderStudentAttendancePanel(user, locations || []);
+}
+
+function renderAdminPanel(user) {
+  const panel = document.getElementById('admin-panel');
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="section-label">Admin Workspace</div>
+    <div class="info-box green">
+      <span>Signed in as ${user.name}. Add departments and department locations like labs or classrooms.</span>
+    </div>
+    <div class="section-label">Add Department</div>
+    <div class="row2">
+      <div class="field">
+        <label>Department Code <span class="req">*</span></label>
+        <input type="text" id="admin-dept-id" placeholder="e.g. CSE"/>
+      </div>
+      <div class="field">
+        <label>Department Name <span class="req">*</span></label>
+        <input type="text" id="admin-dept-name" placeholder="e.g. Computer Science"/>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="addDepartmentFromWorkspace()">Add Department</button>
+    <div id="dept-list" class="att-list" style="margin-top:12px"></div>
+    <div class="section-label" style="margin-top:14px">Add Classroom / Lab</div>
+    <div class="row2">
+      <div class="field">
+        <label>Department <span class="req">*</span></label>
+        <select id="admin-location-dept"></select>
+      </div>
+      <div class="field">
+        <label>Classroom / Lab Name <span class="req">*</span></label>
+        <input type="text" id="admin-location-name" placeholder="e.g. CSE001"/>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Latitude <span class="req">*</span></label>
+        <input type="number" id="admin-location-lat" step="0.00001" placeholder="13.32603"/>
+      </div>
+      <div class="field">
+        <label>Longitude <span class="req">*</span></label>
+        <input type="number" id="admin-location-lng" step="0.00001" placeholder="77.12621"/>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="addLocationFromWorkspace()">Add Location</button>
+    <div id="loc-list" class="att-list" style="margin-top:12px"></div>
+    <button class="btn btn-secondary" onclick="resetBiometricWorkspace()">Logout</button>
+  `;
+  panel.style.display = 'block';
+  loadAdminWorkspaceData();
+}
+
+async function loadAdminWorkspaceData() {
+  await Promise.all([loadDepts(), loadLocs()]);
+  populateAdminDepartmentSelect();
+}
+
+function populateAdminDepartmentSelect() {
+  const select = document.getElementById('admin-location-dept');
+  if (!select) return;
+  const departments = registerLookupState.departments || [];
+  select.innerHTML = '<option value="">Select department...</option>' + departments.map(d =>
+    `<option value="${d.department_id}">${d.name || d.department_id}</option>`
+  ).join('');
+}
+
+function resetBiometricWorkspace() {
+  const studentPanel = document.getElementById('student-att-panel');
+  const adminPanel = document.getElementById('admin-panel');
+  if (studentPanel) { studentPanel.style.display = 'none'; studentPanel.innerHTML = ''; }
+  if (adminPanel) { adminPanel.style.display = 'none'; adminPanel.innerHTML = ''; }
+  signedInUser = null;
+  restoreSignInForm();
+}
+
+async function loadRegisterLookups() {
+  syncOrganizationName();
+  try {
+    const [roleRes, deptRes, locRes] = await Promise.all([
+      api({ action: 'getRoles' }),
+      api({ action: 'getDepartments' }),
+      api({ action: 'getAttendanceLocations' })
+    ]);
+
+    const roles = (roleRes.data || []).filter(r => r && (r.role_id || r.name));
+    registerLookupState.roles = roles;
+    tenantState.roles = roles;
+
+    const departments = (deptRes.data || []).filter(d => d && d.department_id);
+    registerLookupState.departments = departments;
+    tenantState.departments = departments;
+    renderDepartmentOptions(departments, 'Select department...');
+
+    const locations = (locRes.data || []).filter(l => l && l.attendance_location_id);
+    registerLookupState.locations = locations;
+    tenantState.attendanceLocations = locations;
+    updateRegisterFormByRole();
+    populateAdminDepartmentSelect();
+  } catch (e) {
+    toast('Could not load register form options', 'error');
+  }
+}
+
+function isValidDob(value) {
+  if (!value) return false;
+  const dob = new Date(value + 'T00:00:00');
+  if (Number.isNaN(dob.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (dob >= today) return false;
+  const minDob = new Date(today);
+  minDob.setFullYear(minDob.getFullYear() - 100);
+  return dob >= minDob;
+}
+
+async function handleBiometricSignIn() {
+  if(!window.PublicKeyCredential){toast('WebAuthn not supported on this browser','error');return;}
+  const email = document.getElementById('si-email').value.trim();
+  if(!email){toast('Enter your email first','error');return;}
+
+  if(navigator.permissions){
+    try{
+      const p=await navigator.permissions.query({name:'geolocation'});
+      if(p.state==='denied'){showLocBar('fail','Location blocked — allow in Settings → Site permissions');toast('📍 Allow location in browser settings and retry','error');return;}
+    }catch(e){}
+  }
+
+  const btn=document.getElementById('btn-bio-signin');
+  if(btn){btn._h=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Verifying…';btn.disabled=true;}
+  try{
+    // 1. Fetch biometric_code from Users table
+    const info = await api({action:'getBiometric', email});
+    if(!info.success||!info.credentialId){toast(info.message||'No biometric registered','error');return;}
+
+    // 2. WebAuthn — prompts device fingerprint/FaceID
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const rawId = Uint8Array.from(atob(info.credentialId), c=>c.charCodeAt(0));
+    await navigator.credentials.get({publicKey:{
+      challenge, userVerification:'required', timeout:60000,
+      allowCredentials:[{type:'public-key',id:rawId}]
+    }});
+
+    signedInUser = info;
+    const roleValue = roleNameOf(info);
+
+    if (isAdminRole(roleValue)) {
+      showLocBar('ok','Admin verified successfully');
+      applyRoleBasedUi(info, []);
+      toast('✓ Admin signed in','success');
+    } else {
+      const deptCode = normalizeCode(info.deptId);
+      const deptLocations = (registerLookupState.locations || []).filter(loc =>
+        normalizeCode(loc.name || '').startsWith(deptCode)
+      );
+      if (!deptLocations.length) {
+        toast('No classroom or lab is configured for your department yet','error');
+        return;
+      }
+      showLocBar('ok',`${roleValue || 'User'} verified. Select your attendance location.`);
+      applyRoleBasedUi(info, deptLocations);
+    }
+  }catch(e){
+    if(e.name==='NotAllowedError')toast('Biometric cancelled','warn');
+    else toast('Error: '+e.message,'error');
+  }
+  if(btn){btn.innerHTML=btn._h||btn.innerHTML;btn.disabled=false;}
+}
+
+// ════════════════════════════════════════════
+// MARK EXIT
+// Updates Attendance row: type→exit, exit_time
+// Also writes to LocationMonitor
+// ════════════════════════════════════════════
+async function handleExit() {
+  if(!markedUserId){toast('Mark attendance first','error');return;}
+  const btn=document.getElementById('btn-exit');
+  if(btn){btn.disabled=true;btn.textContent='Getting exit location…';}
+  try{
+    showLocBar('getting','Getting exit location…');
+    const loc = await getLocationWithAddress();
+    if(loc.latitude)showLocBar('ok','Exit: '+(loc.address||`${loc.latitude}, ${loc.longitude}`),loc.accuracy);
+    else showLocBar('fail','Exit location not captured');
+
+    const res = await api({
+      action:    'markExit',
+      userId:    markedUserId,
+      latitude:  loc.latitude,
+      longitude: loc.longitude,
+      address:   loc.address
+    });
+
+    if(res.success){
+      toast('✓ '+res.message,'success');
+      const card=document.querySelector('.att-card');
+      if(card){
+        card.querySelector('.att-name').textContent='✓ Entry & Exit Recorded';
+        card.innerHTML+=`
+          <div class="att-row"><span>exit_time</span><span class="att-val">${res.exitTime||''}</span></div>
+          <div class="att-row"><span>type_attendance</span><span class="att-val">exit</span></div>
+          <div class="att-row"><span>duration</span><span class="att-val">${res.duration||res.durationMins+' min'||''}</span></div>
+          <div class="att-row"><span>address (exit)</span><span class="att-val">${res.location||'not captured'}</span></div>`;
+      }
+      if(btn){btn.disabled=true;btn.textContent='Exit recorded ✓';btn.style.opacity='.5';}
+      markedUserId=null;
+      setTimeout(()=>restoreSignInForm(),4000);
+    }else{
+      toast(res.message,'error');
+      if(btn){btn.disabled=false;btn.innerHTML='<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg> Mark Exit (leaving classroom)';}
+    }
+  }catch(e){toast('Error: '+e.message,'error');if(btn){btn.disabled=false;btn.textContent='Mark Exit (leaving classroom)';}}
+}
+
+async function submitStudentAttendance() {
+  if (!signedInUser || !signedInUser.userId) {
+    toast('Sign in first','error');
+    return;
+  }
+  const locationId = document.getElementById('student-location-select')?.value;
+  if (!locationId) {
+    toast('Select your classroom or lab','error');
+    return;
+  }
+  const location = (registerLookupState.locations || []).find(l => String(l.attendance_location_id) === String(locationId));
+  const btn = document.getElementById('btn-student-attendance');
+  if (btn) setLoading('btn-student-attendance', true);
+  try {
+    showLocBar('getting','Getting your location…');
+    const loc = await getLocationWithAddress();
+    if(loc.denied){ if (btn) setLoading('btn-student-attendance', false); return; }
+    if(loc.latitude)showLocBar('ok',loc.address||`${loc.latitude}, ${loc.longitude}`,loc.accuracy);
+    else showLocBar('fail','Location not captured — marked without GPS');
+
+    const att = await api({
+      action: 'markEntry',
+      userId: signedInUser.userId,
+      loginMethod: 'biometric',
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      address: location ? `${location.name}${loc.address ? ' · ' + loc.address : ''}` : loc.address,
+      attendanceLocationId: locationId
+    });
+
+    if(att.success){
+      document.getElementById('student-att-panel').style.display='none';
+      toast('✓ '+att.message,'success');
+      showAttendanceCard({...att, method:'biometric'}, signedInUser.userId);
+    } else if(att.code==='TOO_FAR'){
+      showLocBar('fail',`${att.distance}m from location — must be within ${att.allowed}m`);
+      toast(`📍 Too far (${att.distance}m). Move closer and try again`,'error');
+    } else {
+      toast(att.message,'error');
+    }
+  } catch(e) {
+    toast('Error: ' + e.message,'error');
+  }
+  if (btn) setLoading('btn-student-attendance', false);
+}
+
+// ════════════════════════════════════════════
+// MY ATTENDANCE
+// ════════════════════════════════════════════
+async function toggleMyAtt() {
+  const list=document.getElementById('my-att-list');
+  if(list.style.display==='block'){list.style.display='none';return;}
+  list.style.display='block';
+  const uid=sessionStorage.getItem('ba_uid')||markedUserId;
+  if(!uid){list.innerHTML='<div style="color:var(--muted);font-size:11.5px;text-align:center;padding:8px">Sign in first to view history</div>';return;}
+  list.innerHTML='<div style="text-align:center;color:var(--muted);font-size:11.5px;padding:8px">Loading…</div>';
+  try{
+    const d=await api({action:'getMyAttendance',userId:uid});
+    if(!d.records||!d.records.length){list.innerHTML='<div style="text-align:center;color:var(--muted);font-size:11.5px;padding:8px">No records yet</div>';return;}
+    list.innerHTML=d.records.map(r=>`
+      <div class="my-item">
+        <div class="my-date">${r.date}</div>
+        <div class="my-row"><span>entry_time</span><span>${r.entryTime||'—'}</span></div>
+        <div class="my-row"><span>exit_time</span><span>${r.exitTime||'—'}</span></div>
+        <div class="my-row"><span>duration</span><span>${r.duration||'—'}</span></div>
+        <div class="my-row"><span>login_method</span><span>${r.loginMethod||'—'}</span></div>
+        <div class="my-row"><span>address</span><span>${r.address||'not captured'}</span></div>
+        <div class="my-row"><span>distance_from_centre</span><span>${r.distanceFromCentre||'—'} m</span></div>
+      </div>`).join('');
+  }catch(e){list.innerHTML='<div style="color:var(--danger);font-size:11.5px;text-align:center;padding:8px">Error: '+e.message+'</div>';}
+}
+
+// ════════════════════════════════════════════
+// REGISTER — writes to Users + UserAttendanceLocationMap
+// ════════════════════════════════════════════
+async function handleRegister() {
+  const name   = document.getElementById('r-name').value.trim();
+  const email  = document.getElementById('r-email').value.trim();
+  const pass   = document.getElementById('r-password').value;
+  const confirmPass = document.getElementById('r-confirm-password').value;
+  const dob    = document.getElementById('r-dob').value;
+  const mobile = document.getElementById('r-mobile').value.trim();
+  const dept   = document.getElementById('r-dept').value;
+  const role   = document.getElementById('r-role').value;
+  const inst   = document.getElementById('r-institute').value.trim();
+  const orgType = document.getElementById('r-org-type').value;
+
+  if(!name||!email||!dob||!mobile||!inst||!orgType||!dept||!role||!pass||!confirmPass){
+    toast('All registration fields are required','error');
+    return;
+  }
+  if(!isValidRegistrationName(name)){
+    toast('Enter a valid full name','error');
+    return;
+  }
+  if(!isValidRegistrationEmail(email)){
+    toast('Enter a valid email address','error');
+    return;
+  }
+  if(!isValidDob(dob)){
+    toast('Enter a valid date of birth','error');
+    return;
+  }
+  if(!isValidRegistrationMobile(mobile)){
+    toast('Enter a valid mobile number','error');
+    return;
+  }
+  if(!isValidOrganizationName(inst)){
+    toast('Enter a valid organization name','error');
+    return;
+  }
+  if(!isValidDepartmentValue(dept)){
+    toast('Select a valid department or job role','error');
+    return;
+  }
+  if(pass.length<8){
+    toast('Password must be at least 8 characters','error');
+    return;
+  }
+  if(!/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)){
+    toast('Password must include at least 1 letter and 1 number','error');
+    return;
+  }
+  if(pass !== confirmPass){
+    toast('Password and confirm password must match','error');
+    return;
+  }
+
+  setLoading('btn-register',true);
+  try{
+    const dId = await getDeviceId();
+    const d   = await api({
+      action:               'registerUser',
+      name, email, password:pass, dob, mobile,
+      departmentId:         dept,
+      roleId:               role,
+      instituteId:          inst,
+      orgType:              orgType,
+      deviceId:             dId
+    });
+    if(d.success){
+      registeredUid=d.userId;
+      toast('✓ Account created! Now register biometric.','success');
+      document.getElementById('btn-bio-reg').disabled=false;
+      document.getElementById('bio-hint').textContent='Tap below to register fingerprint / Face ID';
+      // Auto-bind device
+      await api({action:'registerDevice',userId:d.userId,deviceId:dId});
+    }else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+  setLoading('btn-register',false);
+}
+
+// ── Biometric registration (writes biometric_code to Users) ──
+async function handleBiometricRegister() {
+  if(!registeredUid){toast('Create account first','error');return;}
+  if(!window.PublicKeyCredential){toast('WebAuthn not supported','error');return;}
+  try{
+    const challenge=crypto.getRandomValues(new Uint8Array(32));
+    const cred=await navigator.credentials.create({publicKey:{
+      challenge,
+      rp:{name:`BioAttend ${tenantState.institution?.name || ''}`.trim(),id:location.hostname},
+      user:{id:Uint8Array.from(registeredUid,c=>c.charCodeAt(0)),
+            name:document.getElementById('r-email').value,
+            displayName:document.getElementById('r-name').value},
+      pubKeyCredParams:[{type:'public-key',alg:-7}],
+      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
+      timeout:60000
+    }});
+    const credId=btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+    const d=await api({action:'saveBiometric',userId:registeredUid,credentialId:credId});
+    if(d.success){
+      toast('✓ Biometric registered! Ready to sign in.','success');
+      document.getElementById('bio-hint').textContent='✓ Biometric saved — ready to use';
+    }else toast(d.message,'error');
+  }catch(e){toast('Biometric error: '+e.message,'error');}
+}
+
+// ════════════════════════════════════════════
+// TEACHER LOGIN & DASHBOARD
+// ════════════════════════════════════════════
+async function handleTeacherLogin() {
+  const email=document.getElementById('t-email').value.trim();
+  const pass=document.getElementById('t-password').value;
+  if(!email||!pass){toast('Enter email and password','error');return;}
+  setLoading('btn-t-login',true);
+  try{
+    const d=await api({action:'loginUser',email,password:pass});
+    if(!d.success){toast(d.message,'error');setLoading('btn-t-login',false);return;}
+    if(!isTeacherRole(d) && !isAdminRole(d)){toast('Not a teacher or admin account','error');setLoading('btn-t-login',false);return;}
+    teacherData=d;
+    persistTeacherSession(d);
+    document.getElementById('t-login-section').style.display='none';
+    document.getElementById('t-dashboard').style.display='block';
+    document.getElementById('t-welcome').textContent='Hello, '+d.name;
+    switchSub('session'); checkActiveSess();
+  }catch(e){toast('Error: '+e.message,'error');}
+  setLoading('btn-t-login',false);
+}
+
+function teacherLogout(){
+  teacherData=null;clearInterval(sessionTimer);liveSessionId=null;
+  clearTeacherSession();
+  document.getElementById('t-login-section').style.display='block';
+  document.getElementById('t-dashboard').style.display='none';
+  document.getElementById('t-email').value='';document.getElementById('t-password').value='';
+}
+
+async function checkActiveSess(){
+  try{
+    const d=await api({action:'getActiveSession'});
+    const el=document.getElementById('active-sess-display');
+    const form=document.getElementById('open-sess-form');
+    if(d.active){
+      let secs=d.secondsLeft; liveSessionId=d.session.session_id;
+      el.innerHTML=`<div class="sess-card">
+        <div class="sess-subj">🟢 ${d.session.subject} — LIVE</div>
+        <div class="sess-meta">Closes in <span id="t-timer" style="font-weight:700;color:var(--success)">${fmtTime(secs)}</span></div>
+        <button onclick="closeSess('${d.session.session_id}')" class="btn btn-danger" style="margin-top:9px;padding:8px">Stop Session</button>
+      </div>`;
+      form.style.display='none';
+      clearInterval(sessionTimer);
+      sessionTimer=setInterval(()=>{secs--;const t=document.getElementById('t-timer');if(t)t.textContent=fmtTime(secs);if(secs<=0){clearInterval(sessionTimer);checkActiveSess();}},1000);
+    }else{liveSessionId=null;el.innerHTML='';form.style.display='block';}
+  }catch(e){}
+}
+
+async function openSession(){
+  const subj=document.getElementById('t-subject').value.trim();
+  const win=parseInt(document.getElementById('t-window').value);
+  if(!subj){toast('Enter subject name','error');return;}
+  setLoading('btn-open-sess',true);
+  try{
+    const d=await api({action:'createSession',userId:teacherData.userId,teacherName:teacherData.name,
+                       roleId:teacherData.roleId,subject:subj,windowMinutes:win});
+    if(d.success){toast('✓ Session opened','success');document.getElementById('t-subject').value='';checkActiveSess();}
+    else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+  setLoading('btn-open-sess',false);
+}
+
+async function closeSess(sid){
+  try{await api({action:'closeSession',sessionId:sid});toast('Session closed','success');clearInterval(sessionTimer);liveSessionId=null;checkActiveSess();}
+  catch(e){toast('Error','error');}
+}
+
+// ── Live dashboard ────────────────────────────────────────────
+async function refreshLive(){
+  const listEl=document.getElementById('live-list');
+  const infoEl=document.getElementById('live-info');
+  const statEl=document.getElementById('live-stats');
+  const toolEl=document.getElementById('live-toolbar');
+  const refEl=document.getElementById('live-refresh');
+  try{const chk=await api({action:'getActiveSession'});if(chk.active)liveSessionId=chk.session.session_id;}catch(e){}
+  if(!liveSessionId){infoEl.className='no-session';infoEl.style.display='block';infoEl.textContent='No active session — open one from Session tab';statEl.style.display='none';toolEl.style.display='none';refEl.style.display='none';listEl.innerHTML='';return;}
+  try{
+    const d=await api({action:'getDashboard',sessionId:liveSessionId});
+    if(!d.success){toast(d.message,'error');return;}
+    liveData=d;
+    infoEl.style.display='none';statEl.style.display='grid';toolEl.style.display='flex';refEl.style.display='block';
+    document.getElementById('sp').textContent=d.presentCount;
+    document.getElementById('sa').textContent=d.absentCount;
+    document.getElementById('st').textContent=d.total;
+    document.getElementById('spc').textContent=d.total?Math.round(d.presentCount/d.total*100)+'%':'0%';
+    document.getElementById('live-updated').textContent='Updated '+new Date().toLocaleTimeString();
+    renderLiveList();
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+function showLive(tab){
+  liveTab=tab;
+  document.getElementById('seg-p').classList.toggle('active',tab==='present');
+  document.getElementById('seg-a').classList.toggle('active',tab==='absent');
+  renderLiveList();
+}
+
+function renderLiveList(){
+  if(!liveData)return;
+  const el=document.getElementById('live-list');
+  const list=liveTab==='present'?liveData.present:liveData.absent;
+  if(!list||!list.length){el.innerHTML=`<div style="text-align:center;color:var(--muted);padding:16px;font-size:12px">${liveTab==='present'?'No one marked yet':'Everyone present! 🎉'}</div>`;return;}
+  el.innerHTML=list.map((s,i)=>liveTab==='present'
+    ?`<div class="att-item"><div><div class="iname">${i+1}. ${s.name}</div><div class="imeta">${s.email} · ${s.department||'—'} · ${s.entryTime} · ${s.method}${s.exitTime?' → exit '+s.exitTime:''}</div></div><span class="badge">✓</span></div>`
+    :`<div class="att-item"><div><div class="iname">${i+1}. ${s.name}</div><div class="imeta">${s.email} · ${s.department||'—'}</div></div><span class="badge absent">✗</span></div>`
+  ).join('');
+}
+
+function exportLive(){
+  if(!liveData)return;
+  const rows=[['full_name','email','department_id','entry_time','exit_time','login_method','type_attendance']];
+  liveData.present.forEach(s=>rows.push([s.name,s.email,s.department||'',s.entryTime,s.exitTime||'',s.method,'present']));
+  liveData.absent.forEach(s=>rows.push([s.name,s.email,s.department||'','','','','absent']));
+  dlCSV(rows,'attendance_live.csv');
+}
+
+// ── History ───────────────────────────────────────────────────
+async function loadHistory(){
+  const date=document.getElementById('hist-date').value;
+  const el=document.getElementById('hist-list');
+  el.innerHTML='<div style="text-align:center;color:var(--muted);font-size:12px;padding:14px">Loading…</div>';
+  try{
+    const d=await api({action:'getSessions',userId:teacherData.userId});
+    let sessions=d.sessions||[];
+    if(date)sessions=sessions.filter(s=>s.date===date);
+    historyData=sessions;
+    if(!sessions.length){el.innerHTML='<div style="text-align:center;color:var(--muted);font-size:12px;padding:14px">No sessions found</div>';document.getElementById('hist-export').style.display='none';return;}
+    document.getElementById('hist-export').style.display='block';
+    el.innerHTML=sessions.map(s=>`
+      <div class="att-item clickable" style="flex-direction:column;align-items:stretch" onclick="toggleSessDet('${s.sessionId}','${(s.subject||'').replace(/'/g,"\\'")}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div class="iname">${s.subject}</div><div class="imeta">${s.date} · ${s.startTime}–${s.endTime}</div></div>
+          <div style="text-align:right"><span class="badge ${s.status==='open'?'':'closed'}">${s.presentCount||0} present</span><div style="font-size:9.5px;margin-top:2px;color:var(--muted)">${s.status}</div></div>
+        </div>
+        <div id="sd-${s.sessionId}" style="display:none;margin-top:9px;border-top:1px solid var(--border);padding-top:9px"></div>
+      </div>`).join('');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function toggleSessDet(sid,subj){
+  const el=document.getElementById('sd-'+sid);if(!el)return;
+  if(el.style.display==='block'){el.style.display='none';return;}
+  el.style.display='block';el.innerHTML='<div style="color:var(--muted);font-size:11px">Loading…</div>';
+  try{
+    const d=await api({action:'getDashboard',sessionId:sid});
+    if(!d.success){el.innerHTML='<div style="color:var(--danger);font-size:11px">'+d.message+'</div>';return;}
+    el.innerHTML=`
+      <div style="display:flex;gap:10px;margin-bottom:7px;font-size:11px">
+        <span style="color:var(--success)">✓ ${d.presentCount}</span>
+        <span style="color:var(--danger)">✗ ${d.absentCount}</span>
+        <span style="color:var(--muted)">${d.total} total · ${d.total?Math.round(d.presentCount/d.total*100):0}%</span>
+      </div>
+      ${d.present.map(s=>`<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);color:var(--text)">${s.name} <span style="color:var(--muted)">${s.entryTime}${s.exitTime?' → '+s.exitTime:''} · ${s.method}</span></div>`).join('')}
+      ${!d.present.length?'<div style="font-size:11px;color:var(--muted)">No students marked</div>':''}
+      <button onclick="event.stopPropagation();exportSession('${sid}','${subj}')" class="export-btn" style="float:none;margin-top:9px">↓ Export CSV</button>`;
+  }catch(e){el.innerHTML='<div style="color:var(--danger);font-size:11px">Error</div>';}
+}
+
+async function exportSession(sid,subj){
+  try{
+    const d=await api({action:'exportAttendance',sessionId:sid});
+    if(d.success)dlCSV(null,'att_'+(subj||'export').replace(/\s+/g,'_')+'.csv',d.csv);
+    else toast(d.message,'error');
+  }catch(e){toast('Export failed','error');}
+}
+
+async function exportHistory(){
+  if(!historyData.length)return;
+  try{
+    const d=await api({action:'exportAttendance',date:historyData[0]?.date});
+    if(d.success)dlCSV(null,'att_'+(historyData[0]?.date||'all')+'.csv',d.csv);
+    else toast(d.message,'error');
+  }catch(e){toast('Export failed','error');}
+}
+
+// ── Students roster ───────────────────────────────────────────
+async function loadStudents(){
+  const el=document.getElementById('stud-list');
+  el.innerHTML='<div style="text-align:center;color:var(--muted);font-size:12px;padding:14px">Loading…</div>';
+  try{
+    const d=await api({action:'getStudents'});
+    allStudents=d.students||[];
+    document.getElementById('stud-count').textContent=allStudents.length+' students in Users table';
+    renderStudents(allStudents);
+  }catch(e){toast('Error','error');}
+}
+
+function filterStudents(){
+  const q=document.getElementById('student-search').value.toLowerCase();
+  const f=allStudents.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)||(s.department||'').toLowerCase().includes(q));
+  document.getElementById('stud-count').textContent=f.length+' of '+allStudents.length+' students';
+  renderStudents(f);
+}
+
+function renderStudents(list){
+  const el=document.getElementById('stud-list');
+  if(!list.length){el.innerHTML='<div style="text-align:center;color:var(--muted);font-size:12px;padding:14px">No students found</div>';return;}
+  el.innerHTML=list.map((s,i)=>`
+    <div class="att-item">
+      <div><div class="iname">${i+1}. ${s.name}</div><div class="imeta">${s.email} · dept: ${s.department||'—'}</div></div>
+      <div style="text-align:right;font-size:10px;line-height:1.8">
+        <span style="color:${s.hasBio?'var(--success)':'var(--muted)'}">${s.hasBio?'🔐 bio':'🔐 none'}</span><br>
+        <span style="color:${s.hasDevice?'var(--success)':'var(--muted)'}">${s.hasDevice?'📱 bound':'📱 none'}</span>
+      </div>
+    </div>`).join('');
+}
+
+// ════════════════════════════════════════════
+// ADMIN — lookup table management
+// ════════════════════════════════════════════
+
+// Departments
+async function addDepartment(){
+  const id=document.getElementById('ad-id').value.trim();
+  const name=document.getElementById('ad-name').value.trim();
+  const incharge=document.getElementById('ad-incharge').value.trim();
+  const email=document.getElementById('ad-email').value.trim();
+  if(!id||!name){toast('department_id and name are required','error');return;}
+  try{
+    // Write directly to Departments sheet via a dedicated action
+    const d=await api({action:'addDepartment',departmentId:id,name,inCharge:incharge,email});
+    if(d.success){toast('✓ Department added','success');document.getElementById('ad-id').value='';document.getElementById('ad-name').value='';loadDepts();}
+    else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function addDepartmentFromWorkspace() {
+  const deptId = document.getElementById('admin-dept-id')?.value.trim();
+  const name = document.getElementById('admin-dept-name')?.value.trim();
+  if(!deptId||!name){toast('Department code and name are required','error');return;}
+  try{
+    const d=await api({action:'addDepartment',departmentId:normalizeCode(deptId),name});
+    if(d.success){
+      toast('✓ Department added','success');
+      document.getElementById('admin-dept-id').value='';
+      document.getElementById('admin-dept-name').value='';
+      await loadRegisterLookups();
+      await loadDepts();
+    } else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function loadDepts(){
+  const el=document.getElementById('dept-list');
+  try{
+    const d=await api({action:'getDepartments'});
+    const rows=d.data||[];
+    el.innerHTML=rows.length?rows.map(r=>`<div class="att-item"><div><div class="iname">${r.department_id} — ${r.name}</div><div class="imeta">in_charge: ${r.in_charge||'—'} · ${r.email||'—'}</div></div></div>`).join(''):'<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No departments yet</div>';
+  }catch(e){}
+}
+
+// Attendance Locations
+async function addLocation(){
+  const id=document.getElementById('al-id').value.trim();
+  const name=document.getElementById('al-name').value.trim();
+  const lat=document.getElementById('al-lat').value.trim();
+  const lng=document.getElementById('al-lng').value.trim();
+  if(!id||!name||!lat||!lng){toast('All location fields are required','error');return;}
+  try{
+    const d=await api({action:'addAttendanceLocation',locationId:id,name,latitude:parseFloat(lat),longitude:parseFloat(lng)});
+    if(d.success){toast('✓ Location added','success');document.getElementById('al-id').value='';document.getElementById('al-name').value='';loadLocs();}
+    else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function addLocationFromWorkspace() {
+  const deptId = document.getElementById('admin-location-dept')?.value.trim();
+  const name = document.getElementById('admin-location-name')?.value.trim();
+  const lat = document.getElementById('admin-location-lat')?.value.trim();
+  const lng = document.getElementById('admin-location-lng')?.value.trim();
+  if(!deptId||!name||!lat||!lng){toast('Department, classroom/lab name, latitude and longitude are required','error');return;}
+  const normalizedName = normalizeCode(name);
+  if (!normalizedName.startsWith(normalizeCode(deptId))) {
+    toast('Location name should start with department code, for example CSE001','error');
+    return;
+  }
+  const locationId = `${normalizeCode(deptId)}_${Date.now().toString().slice(-6)}`;
+  try{
+    const d=await api({
+      action:'addAttendanceLocation',
+      locationId,
+      name: normalizedName,
+      latitude: parseFloat(lat),
+      longitude: parseFloat(lng)
+    });
+    if(d.success){
+      toast('✓ Location added','success');
+      document.getElementById('admin-location-name').value='';
+      document.getElementById('admin-location-lat').value='';
+      document.getElementById('admin-location-lng').value='';
+      await loadRegisterLookups();
+      await loadLocs();
+    } else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+async function loadLocs(){
+  const el=document.getElementById('loc-list');
+  try{
+    const d=await api({action:'getLocations'});
+    const rows=d.data||[];
+    el.innerHTML=rows.length?rows.map(r=>`<div class="att-item"><div><div class="iname">${r.attendance_location_id} — ${r.name}</div><div class="imeta">lat: ${r.latitude} · lng: ${r.longitude}</div></div></div>`).join(''):'<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No locations yet</div>';
+  }catch(e){}
+}
+
+// User → Location map
+async function addUserLocMap(){
+  const uid=document.getElementById('ulm-uid').value.trim();
+  const lid=document.getElementById('ulm-lid').value.trim();
+  const dist=document.getElementById('ulm-dist').value.trim();
+  if(!uid||!lid){toast('user_id and attendance_location_id are required','error');return;}
+  try{
+    const d=await api({action:'addUserLocMap',userId:uid,locationId:lid,allowedDistance:parseInt(dist)||200});
+    if(d.success){toast('✓ Mapping added','success');document.getElementById('ulm-uid').value='';}
+    else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
+// ── CSV download ──────────────────────────────────────────────
+function dlCSV(rows, filename, csvStr){
+  const c=csvStr||rows.map(r=>r.map(x=>'"'+(String(x||'')).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));
+  a.download=filename;a.click();
+}
+
+// ── Init ──────────────────────────────────────────────────────
+// Restore session state (if student already marked today)
+try{
+  const uid=sessionStorage.getItem('ba_uid');
+  if(uid){
+    markedUserId=uid;
+    showAttendanceCard({
+      name:             sessionStorage.getItem('ba_name'),
+      date:             sessionStorage.getItem('ba_date'),
+      time:             sessionStorage.getItem('ba_time'),
+      location:         sessionStorage.getItem('ba_loc'),
+      method:           sessionStorage.getItem('ba_meth'),
+      distanceFromCentre: sessionStorage.getItem('ba_dist')
+    }, uid);
+  }
+}catch(e){}
+
+// Online/offline detection
+const offBar=document.getElementById('offline-bar');
+function chkOnline(){offBar.classList.toggle('show',!navigator.onLine);}
+window.addEventListener('online',chkOnline);window.addEventListener('offline',chkOnline);chkOnline();
+const rDob=document.getElementById('r-dob');if(rDob)rDob.max=new Date().toISOString().slice(0,10);
+syncOrganizationName();
+try{
+  const savedTeacher = localStorage.getItem('ba_teacher_session');
+  if (savedTeacher) teacherData = JSON.parse(savedTeacher);
+}catch(e){}
+bootTenant();
+</script>
+
+<!-- ── Add admin write actions to router (add to Code.gs route) ── -->
+<!-- These are called from the Admin tab forms -->
+
+<!-- ── PWA service worker + install prompt ── -->
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+let dip=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();dip=e;
+  try{if(!localStorage.getItem('pwa_d'))document.getElementById('pwa-banner').classList.add('show');}catch(e){}
+});
+document.getElementById('pwa-install-btn').addEventListener('click',async()=>{
+  if(!dip)return;document.getElementById('pwa-banner').classList.remove('show');dip.prompt();
+  const{outcome}=await dip.userChoice;dip=null;if(outcome==='accepted')toast('✓ BioAttend installed!','success');
+});
+document.getElementById('pwa-dismiss').addEventListener('click',()=>{
+  document.getElementById('pwa-banner').classList.remove('show');
+  try{localStorage.setItem('pwa_d','1');}catch(e){}
+});
+//com
+</script>
+</body>
+</html>

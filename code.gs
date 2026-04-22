@@ -1,0 +1,1622 @@
+// ============================================================
+//  BioAttend – Google Apps Script Backend  v7
+//  College  : Siddaganga Institute of Technology, Tumkur
+//  Deploy   : Web App → Execute as Me → Access: Anyone
+//
+//  ALL IDs are now auto-incrementing integers (1, 2, 3, …)
+//  across every table — Users, Departments, Roles, Attendance,
+//  LocationMonitor, AttendanceType, AttendanceLocations,
+//  UserAttendanceLocationMap, Sessions, AuthSessions, AuditLog,
+//  AttendanceWindows, UserIndex.
+// ============================================================
+
+// ── Sheet names ───────────────────────────────────────────────
+var SH = {
+  USERS        : 'Users',
+  DEPARTMENTS  : 'Departments',
+  ROLES        : 'Roles',
+  ATTENDANCE   : 'Attendance',
+  LOC_MONITOR  : 'LocationMonitor',
+  ATT_TYPE     : 'AttendanceType',
+  ATT_LOCATIONS: 'AttendanceLocations',
+  USER_LOC_MAP : 'UserAttendanceLocationMap',
+  SESSIONS     : 'Sessions',
+  USER_INDEX   : 'UserIndex',
+  AUTH_SESSIONS: 'AuthSessions',
+  AUDIT_LOG    : 'AuditLog',
+  ATT_WINDOWS  : 'AttendanceWindows'
+};
+
+// ── Exact column headers per table ───────────────────────────
+var HEADERS = {
+  Users: [
+    'user_id', 'institute_id', 'department_id', 'role_id',
+    'full_name', 'dob', 'mobile', 'email',
+    'password_hash', 'biometric_code', 'device_identification'
+  ],
+  Departments: [
+    'department_id', 'name', 'in_charge', 'email'
+  ],
+  Roles: [
+    'role_id', 'name'
+  ],
+  Attendance: [
+    'attendance_id', 'user_id', 'full_name', 'type_attendance',
+    'entry_time', 'exit_time', 'attendance_date', 'login_method',
+    'latitude', 'longitude', 'attendance_location_id',
+    'address', 'distance_from_centre'
+  ],
+  LocationMonitor: [
+    'location_monitor_id', 'user_id', 'latitude', 'longitude',
+    'distance_from_centre', 'timestamp'
+  ],
+  AttendanceType: [
+    'attendance_type_id', 'type'
+  ],
+  AttendanceLocations: [
+    'attendance_location_id', 'name', 'latitude', 'longitude'
+  ],
+  UserAttendanceLocationMap: [
+    'user_attendance_location_map_id', 'user_id',
+    'attendance_location_id', 'allowed_distance'
+  ],
+  Sessions: [
+    'session_id', 'teacher_id', 'teacher_name', 'subject',
+    'date', 'start_time', 'end_time', 'status', 'window_minutes'
+  ],
+  UserIndex: [
+    'user_id', 'email', 'row_number'
+  ],
+  AuthSessions: [
+    'auth_token', 'user_id', 'role_name', 'created_at', 'expires_at', 'status'
+  ],
+  AuditLog: [
+    'audit_id', 'event_type', 'actor_user_id', 'actor_role', 'target_user_id',
+    'details', 'ip_hint', 'created_at'
+  ],
+  AttendanceWindows: [
+    'window_id', 'name', 'start_time', 'duration_minutes', 'status'
+  ]
+};
+
+var DEFAULT_GUID = '1';
+var REQUEST_CONTEXT = { guid: DEFAULT_GUID };
+var TENANT_DIRECTORY = {
+  '1': {
+    guid: '1',
+    orgType: 'college',
+    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1g43D4SH7DnYAh05trU5t5xhfyVxP43unO4knX8WdA9k/edit?gid=0#gid=0',
+    institution: {
+      name: 'BioAttend Main',
+      city: 'Tumakuru',
+      logoUrl: '',
+      website: '',
+      address: 'Main tenant workspace'
+    },
+    application: {
+      id: 101,
+      name: 'Attendance monitoring',
+      description: 'Multi-tenant biometric attendance monitoring'
+    }
+  },
+  '2': {
+    guid: '2',
+    orgType: 'college',
+    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1c5ZGKxr-ZNxbao6L6D87N8JNSvPNf2Il9Xnl8ha04f8/edit?gid=0#gid=0',
+    institution: {
+      name: 'SIT',
+      city: 'Tumakuru',
+      logoUrl: '',
+      website: '',
+      address: 'Siddaganga Institute of Technology'
+    },
+    application: {
+      id: 102,
+      name: 'Attendance monitoring',
+      description: 'Biometric attendance for students, teachers and staff'
+    }
+  },
+  '3': {
+    guid: '3',
+    orgType: 'college',
+    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1yGS6eyC6NTqwu6dllTYALe_Sc_0hn4_furgU-Wq6bH4/edit?gid=0#gid=0',
+    institution: {
+      name: 'SSIT',
+      city: 'Tumakuru',
+      logoUrl: '',
+      website: '',
+      address: 'Sri Siddhartha Institute of Technology'
+    },
+    application: {
+      id: 103,
+      name: 'Attendance monitoring',
+      description: 'Biometric attendance for multi-tenant institutions'
+    }
+  }
+};
+
+// ── GPS defaults ──────────────────────────────────────────────
+var DEFAULT_LAT = 13.32603;
+var DEFAULT_LNG = 77.12621;
+var DEFAULT_RADIUS = 200;
+var AUTO_SESSION_WINDOW_MINUTES = 10;
+var AUTO_SESSION_SUBJECT = 'Automatic Attendance Session';
+var AUTH_SESSION_TTL_MINUTES = 480;
+var PASSWORD_ITERATIONS = 12000;
+
+// ── Cache TTLs ────────────────────────────────────────────────
+var TTL_LOOKUP  = 600;
+var TTL_DASH    = 60;
+var TTL_SESSION = 30;
+
+// ============================================================
+//  NUMERIC AUTO-INCREMENT ID GENERATOR
+//  Reads the last row of any sheet and returns max(id_col) + 1
+//  Works for every table — guarantees 1, 2, 3, … integers
+// ============================================================
+
+/**
+ * Returns the next integer ID for a given sheet.
+ * @param {string} sheetName  - sheet to inspect
+ * @param {number} idCol      - 1-based column index of the id column (default 1)
+ */
+function nextId(sheetName, idCol) {
+  idCol = idCol || 1;
+  var sheet = getSheet(sheetName);
+  var last  = sheet.getLastRow();
+  if (last < 2) return 1;
+  var vals = sheet.getRange(2, idCol, last - 1, 1).getValues();
+  var max  = 0;
+  vals.forEach(function(r) {
+    var n = parseInt(r[0], 10);
+    if (!isNaN(n) && n > max) max = n;
+  });
+  return max + 1;
+}
+
+// ============================================================
+//  TRANSPORT
+// ============================================================
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  try {
+    var p = e && e.parameter ? e.parameter : {};
+    if (p.guid) setRequestGuid(p.guid);
+    if (p.getOrgByGUID || p.action === 'getOrgByGUID')
+      return jsonOut(getOrgByGUID(p.guid || p.getOrgByGUID));
+    if (p.action === 'getRolesDepartments')
+      return jsonOut(getRolesDepartments(p.guid));
+    if (!p.data) return jsonOut({ status: 'BioAttend v7 running', time: new Date().toString() });
+    return jsonOut(route(JSON.parse(decodeURIComponent(p.data))));
+  } catch(err) { return jsonOut({ success: false, message: 'doGet: ' + err }); }
+}
+
+function doPost(e) {
+  try { return jsonOut(route(JSON.parse(e.postData.contents))); }
+  catch(err) { return jsonOut({ success: false, message: 'doPost: ' + err }); }
+}
+
+// ============================================================
+//  ROUTER
+// ============================================================
+
+function route(b) {
+  b = b || {};
+  setRequestGuid(b.guid);
+  switch (b.action) {
+    case 'register':              return registerUser(b);
+    case 'registerUser':          return registerUser(b);
+    case 'signIn':                return signInUser(b);
+    case 'loginUser':             return signInUser(b);
+    case 'saveBiometric':         return saveBiometric(b);
+    case 'getBiometric':          return getBiometric(b);
+    case 'registerDevice':        return registerDevice(b);
+    case 'checkDevice':           return checkDevice(b);
+
+    case 'markEntry':             return markEntry(b);
+    case 'markAttendance':        return markEntry(b);
+    case 'markExit':              return markExit(b);
+    case 'exitAttendance':        return markExit(b);
+    case 'trackStudentLocation':  return trackStudentLocation(b);
+    case 'getMyAttendance':       return getMyAttendance(b);
+    case 'exportAttendance':      return exportAttendance(b);
+
+    case 'createSession':         return createSession(b);
+    case 'closeSession':          return closeSession(b);
+    case 'getActiveSession':      return getActiveSession(b);
+    case 'getSessions':           return getSessions(b);
+    case 'getTeacherNotifications': return getTeacherNotifications(b);
+
+    case 'getDashboard':          return getDashboard(b);
+    case 'getStudents':           return getStudents(b);
+
+    case 'getOrgByGUID':          return getOrgByGUID(b.guid);
+    case 'getRolesDepartments':   return getRolesDepartments(b.guid);
+    case 'getDepartments':        return getLookup(SH.DEPARTMENTS);
+    case 'getRoles':              return getLookup(SH.ROLES);
+    case 'getAttendanceTypes':    return getLookup(SH.ATT_TYPE);
+    case 'getLocations':          return getLookup(SH.ATT_LOCATIONS);
+    case 'getAttendanceLocations': return getLookup(SH.ATT_LOCATIONS);
+    case 'getUserLocMap':         return getUserLocMap(b);
+
+    case 'addDepartment':         return addDepartment(b);
+    case 'addAttendanceLocation': return addAttendanceLocation(b);
+    case 'addUserLocMap':         return addUserLocMap(b);
+
+    case 'setupSheets':           return setupSheets();
+    case 'resetUsersSheet':       return resetUsersSheet();
+    case 'debug':                 return debugInfo();
+    default: return { success: false, message: 'Unknown action: ' + b.action };
+  }
+}
+
+// ============================================================
+//  SHEET UTILITIES
+// ============================================================
+
+function ss() {
+  var cfg = getTenantConfig(currentGuid());
+  if (cfg && cfg.spreadsheetUrl) {
+    var spreadsheetId = extractSpreadsheetId(cfg.spreadsheetUrl);
+    if (spreadsheetId) return SpreadsheetApp.openById(spreadsheetId);
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function getSheet(name) {
+  var sheet = ss().getSheetByName(name);
+  if (!sheet) {
+    sheet = ss().insertSheet(name);
+    var h = HEADERS[name];
+    if (h) {
+      sheet.appendRow(h);
+      sheet.getRange(1, 1, 1, h.length)
+        .setFontWeight('bold')
+        .setBackground('#0f172a')
+        .setFontColor('#f1f5f9');
+      sheet.setFrozenRows(1);
+    }
+  }
+  return sheet;
+}
+
+function getRows(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  var data = sheet.getRange(1, 1, last, sheet.getLastColumn()).getValues();
+  var hdrs = data[0];
+  return data.slice(1).map(function(row) {
+    var o = {};
+    hdrs.forEach(function(h, i) { o[h] = row[i]; });
+    return o;
+  });
+}
+
+function getCached(sheetName, ttl) {
+  var cache = CacheService.getScriptCache();
+  var hit   = cache.get(tenantScopedKey('rows_' + sheetName));
+  if (hit) { try { return JSON.parse(hit); } catch(e) {} }
+  var rows  = getRows(getSheet(sheetName));
+  try { cache.put(tenantScopedKey('rows_' + sheetName), JSON.stringify(rows), ttl || TTL_LOOKUP); } catch(e) {}
+  return rows;
+}
+
+function invalidate(sheetName) {
+  try { CacheService.getScriptCache().remove(tenantScopedKey('rows_' + sheetName)); } catch(e) {}
+}
+
+function buildMap(rows, key) {
+  var m = {};
+  rows.forEach(function(r) { m[r[key]] = r; });
+  return m;
+}
+
+function normalizeGuid(guid) {
+  var raw = String(guid || '').trim();
+  return raw || DEFAULT_GUID;
+}
+
+function setRequestGuid(guid) {
+  REQUEST_CONTEXT.guid = normalizeGuid(guid);
+  return REQUEST_CONTEXT.guid;
+}
+
+function currentGuid() {
+  return normalizeGuid(REQUEST_CONTEXT.guid);
+}
+
+function tenantScopedKey(key) {
+  return currentGuid() + '__' + key;
+}
+
+function extractSpreadsheetId(url) {
+  var match = String(url || '').match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : '';
+}
+
+function getTenantConfig(guid) {
+  return TENANT_DIRECTORY[normalizeGuid(guid)] || null;
+}
+
+function getWebAppUrl() {
+  try {
+    return ScriptApp.getService().getUrl() || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function getOrgByGUID(guid) {
+  try {
+    var tenant = getTenantConfig(guid);
+    if (!tenant) return { success: false, message: 'Tenant not found for GUID: ' + normalizeGuid(guid) };
+
+    setRequestGuid(tenant.guid);
+    var roles = getCached(SH.ROLES, TTL_LOOKUP).map(function(r) {
+      return String(r.name || r.role_id || '').trim();
+    }).filter(function(name) { return !!name; });
+
+    return {
+      success: true,
+      guid: tenant.guid,
+      name: tenant.institution.name,
+      logo: tenant.institution.logoUrl || '',
+      gsheet_url: tenant.spreadsheetUrl,
+      orgType: tenant.orgType || '',
+      roles: roles,
+      institution: tenant.institution,
+      application: tenant.application,
+      apiUrl: getWebAppUrl()
+    };
+  } catch (err) {
+    return { success: false, message: 'getOrgByGUID: ' + err };
+  }
+}
+
+function getRolesDepartments(guid) {
+  try {
+    setRequestGuid(guid);
+    return {
+      success: true,
+      roles: getCached(SH.ROLES, TTL_LOOKUP),
+      departments: getCached(SH.DEPARTMENTS, TTL_LOOKUP),
+      attendanceLocations: getCached(SH.ATT_LOCATIONS, TTL_LOOKUP)
+    };
+  } catch (err) {
+    return { success: false, message: 'getRolesDepartments: ' + err };
+  }
+}
+
+// ── UserIndex ─────────────────────────────────────────────────
+
+function getUserByEmail(email) {
+  var lower = String(email).toLowerCase();
+  var idx   = getSheet(SH.USER_INDEX);
+  var data  = idx.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][1]).toLowerCase() === lower) {
+      return fetchUserRow(data[i][2]);
+    }
+  }
+  return null;
+}
+
+function getUserById(userId) {
+  var idx  = getSheet(SH.USER_INDEX);
+  var data = idx.getDataRange().getValues();
+  var idStr = String(userId);
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === idStr) {
+      return fetchUserRow(data[i][2]);
+    }
+  }
+  return null;
+}
+
+function fetchUserRow(rowNum) {
+  var sheet = getSheet(SH.USERS);
+  var ncols = HEADERS.Users.length;
+  var row   = sheet.getRange(rowNum, 1, 1, ncols).getValues()[0];
+  var obj   = {};
+  HEADERS.Users.forEach(function(h, i) { obj[h] = row[i]; });
+  return obj;
+}
+
+function addToUserIndex(userId, email) {
+  var rowNum = getSheet(SH.USERS).getLastRow();
+  getSheet(SH.USER_INDEX).appendRow([userId, String(email).toLowerCase(), rowNum]);
+}
+
+function updateUserPasswordHash(userId, passwordHash) {
+  var sheet = getSheet(SH.USERS);
+  var last = sheet.getLastRow();
+  if (last < 2) return false;
+  var uids = sheet.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < uids.length; i++) {
+    if (String(uids[i][0]) === String(userId)) {
+      sheet.getRange(i + 2, 9).setValue(passwordHash);
+      invalidate(SH.USERS);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+
+function sha256Hex(value) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
+  return raw.map(function(b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+
+function legacyHashPw(pw) {
+  return sha256Hex(pw);
+}
+
+function hashPw(pw, salt) {
+  var s = salt || ('salt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+  var out = String(pw || '') + '|' + s;
+  for (var i = 0; i < PASSWORD_ITERATIONS; i++) {
+    out = sha256Hex(out + '|' + i);
+  }
+  return 'v2$' + PASSWORD_ITERATIONS + '$' + s + '$' + out;
+}
+
+function verifyPw(pw, storedHash) {
+  var raw = String(storedHash || '');
+  if (raw.indexOf('v2$') === 0) {
+    var parts = raw.split('$');
+    if (parts.length !== 4) return false;
+    var iterations = parseInt(parts[1], 10);
+    var salt = parts[2];
+    var out = String(pw || '') + '|' + salt;
+    for (var i = 0; i < iterations; i++) {
+      out = sha256Hex(out + '|' + i);
+    }
+    return out === parts[3];
+  }
+  return legacyHashPw(pw) === raw;
+}
+
+function haversine(lat1, lng1, lat2, lng2) {
+  var R = 6371000, d2r = Math.PI / 180;
+  var a = Math.sin((lat2-lat1)*d2r/2) * Math.sin((lat2-lat1)*d2r/2) +
+          Math.cos(lat1*d2r) * Math.cos(lat2*d2r) *
+          Math.sin((lng2-lng1)*d2r/2) * Math.sin((lng2-lng1)*d2r/2);
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+function normDate(raw, tz) {
+  if (!raw && raw !== 0) return '';
+  if (raw instanceof Date) return Utilities.formatDate(raw, tz, 'yyyy-MM-dd');
+  var s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.length > 10 && s.indexOf('T') >= 0) return s.slice(0, 10);
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+  return s.slice(0, 10);
+}
+
+function tz() { return Session.getScriptTimeZone(); }
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function normalizeClockTime(raw) {
+  var m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  var h = parseInt(m[1], 10);
+  var min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return '';
+  return pad2(h) + ':' + pad2(min);
+}
+
+function buildAutoSession(dateStr, startHm) {
+  var norm = normalizeClockTime(startHm);
+  if (!norm) return null;
+  var startDt = new Date(dateStr + 'T' + norm + ':00');
+  var duration = AUTO_SESSION_WINDOW_MINUTES;
+  var windowName = 'Attendance Window';
+  if (typeof startHm === 'object' && startHm) {
+    duration = parseInt(startHm.duration_minutes || AUTO_SESSION_WINDOW_MINUTES, 10);
+    windowName = String(startHm.name || windowName);
+    norm = normalizeClockTime(startHm.start_time || norm);
+    startDt = new Date(dateStr + 'T' + norm + ':00');
+  }
+  var endDt = new Date(startDt.getTime() + duration * 60000);
+  return {
+    session_id: 'auto_' + dateStr + '_' + norm.replace(':', ''),
+    teacher_id: 'ALL',
+    teacher_name: 'Automatic',
+    subject: windowName || AUTO_SESSION_SUBJECT,
+    date: dateStr,
+    start_time: norm + ':00',
+    end_time: Utilities.formatDate(endDt, tz(), 'HH:mm:ss'),
+    status: 'open',
+    window_minutes: duration,
+    is_auto: true
+  };
+}
+
+function getAutoSessionsForDate(dateStr) {
+  return getWindowsConfig().map(function(windowRow) {
+    return buildAutoSession(dateStr, windowRow);
+  }).filter(function(s) { return !!s; });
+}
+
+function getCurrentAutoSession(now) {
+  var t = tz();
+  var dateStr = Utilities.formatDate(now || new Date(), t, 'yyyy-MM-dd');
+  var current = now || new Date();
+  var sessions = getAutoSessionsForDate(dateStr);
+  for (var i = 0; i < sessions.length; i++) {
+    var s = sessions[i];
+    var st = new Date(s.date + 'T' + s.start_time);
+    var en = new Date(s.date + 'T' + s.end_time);
+    if (current >= st && current <= en) return s;
+  }
+  return null;
+}
+
+function getRoleDirectory() {
+  var rows = getCached(SH.ROLES, TTL_LOOKUP);
+  var byId = {};
+  var byName = {};
+  rows.forEach(function(r) {
+    var id = String(r.role_id || '').trim();
+    var name = String(r.name || '').trim().toLowerCase();
+    if (id) byId[id] = name;
+    if (name) byName[name] = id;
+  });
+  return { byId: byId, byName: byName };
+}
+
+function normalizeRoleValue(roleValue) {
+  var raw = String(roleValue || '').trim().toLowerCase();
+  if (!raw) return '';
+  var roles = getRoleDirectory();
+  // If it's already a name (student/teacher/admin) return as-is
+  if (roles.byName[raw]) return raw;
+  // If it's a numeric id, resolve to name
+  return roles.byId[raw] || raw;
+}
+
+function findRoleIdByName(roleName) {
+  var raw = String(roleName || '').trim().toLowerCase();
+  if (!raw) return '';
+  return getRoleDirectory().byName[raw] || '';
+}
+
+function ensureExactRows(sheetName, rows) {
+  var sheet = getSheet(sheetName);
+  var hdrs = HEADERS[sheetName];
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, hdrs.length).setValues([hdrs]);
+  if (rows && rows.length) {
+    sheet.getRange(2, 1, rows.length, hdrs.length).setValues(rows);
+  }
+  invalidate(sheetName);
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function toCleanText(value, maxLen) {
+  var s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (maxLen && s.length > maxLen) s = s.slice(0, maxLen);
+  return s;
+}
+
+function parseNumber(value) {
+  if (value === '' || value === null || typeof value === 'undefined') return null;
+  var n = parseFloat(value);
+  return isNaN(n) ? null : n;
+}
+
+function isValidMobile(mobile) {
+  var raw = String(mobile || '').trim();
+  if (!raw) return true;
+  return /^[0-9+\-\s]{7,20}$/.test(raw);
+}
+
+function isValidCoordinate(lat, lng) {
+  return lat !== null && lng !== null &&
+    lat >= -90 && lat <= 90 &&
+    lng >= -180 && lng <= 180;
+}
+
+function hasDepartment(departmentId) {
+  var raw = String(departmentId || '').trim();
+  if (!raw) return false;
+  var rows = getCached(SH.DEPARTMENTS, TTL_LOOKUP);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].department_id) === raw) return true;
+  }
+  return false;
+}
+
+function hasRole(roleId) {
+  var raw = String(roleId || '').trim();
+  if (!raw) return false;
+  var rows = getCached(SH.ROLES, TTL_LOOKUP);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].role_id) === raw) return true;
+  }
+  return false;
+}
+
+function getWindowsConfig() {
+  var rows = getCached(SH.ATT_WINDOWS, TTL_LOOKUP).filter(function(r) {
+    return String(r.status || '').toLowerCase() === 'active';
+  });
+  if (!rows.length) {
+    return [
+      { name: 'Morning 1',   start_time: '09:00', duration_minutes: AUTO_SESSION_WINDOW_MINUTES },
+      { name: 'Morning 2',   start_time: '10:30', duration_minutes: AUTO_SESSION_WINDOW_MINUTES },
+      { name: 'Afternoon 1', start_time: '14:00', duration_minutes: AUTO_SESSION_WINDOW_MINUTES },
+      { name: 'Afternoon 2', start_time: '15:30', duration_minutes: AUTO_SESSION_WINDOW_MINUTES }
+    ];
+  }
+  return rows;
+}
+
+// ── Auth sessions ─────────────────────────────────────────────
+// auth_token stays as a random string (it's a token, not a pk used in joins)
+
+function createAuthSession(userId, roleName) {
+  var token = 'auth_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+  var createdAt = new Date();
+  var expiresAt = new Date(createdAt.getTime() + AUTH_SESSION_TTL_MINUTES * 60000);
+  getSheet(SH.AUTH_SESSIONS).appendRow([
+    token,
+    String(userId || ''),
+    String(roleName || ''),
+    createdAt.toISOString(),
+    expiresAt.toISOString(),
+    'active'
+  ]);
+  return { authToken: token, expiresAt: expiresAt.toISOString() };
+}
+
+function getAuthSession(token) {
+  if (!token) return null;
+  var rows = getRows(getSheet(SH.AUTH_SESSIONS));
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i].auth_token) !== String(token)) continue;
+    if (String(rows[i].status) !== 'active') return null;
+    var exp = new Date(rows[i].expires_at);
+    if (isNaN(exp.getTime()) || exp.getTime() < Date.now()) return null;
+    return rows[i];
+  }
+  return null;
+}
+
+function requireAuth(b, allowedRoles) {
+  var session = getAuthSession(b && b.authToken);
+  if (!session) return { ok: false, error: { success: false, message: 'Authentication required' } };
+  if (allowedRoles && allowedRoles.length && allowedRoles.indexOf(String(session.role_name)) < 0) {
+    return { ok: false, error: { success: false, message: 'Access denied' } };
+  }
+  return { ok: true, session: session };
+}
+
+function appendAuditLog(eventType, actorUserId, actorRole, targetUserId, details) {
+  try {
+    var auditId = nextId(SH.AUDIT_LOG);
+    getSheet(SH.AUDIT_LOG).appendRow([
+      auditId,
+      String(eventType || ''),
+      String(actorUserId || ''),
+      String(actorRole || ''),
+      String(targetUserId || ''),
+      JSON.stringify(details || {}),
+      '',
+      new Date().toISOString()
+    ]);
+  } catch(e) {}
+}
+
+function pushTeacherNotification(notification) {
+  try {
+    if (!notification || !notification.sessionId) return;
+    var cache = CacheService.getScriptCache();
+    var key = tenantScopedKey('teacher_notif_' + notification.sessionId);
+    var rows = [];
+    var cached = cache.get(key);
+    if (cached) { try { rows = JSON.parse(cached) || []; } catch(e) {} }
+    rows.unshift(notification);
+    rows = rows.slice(0, 25);
+    cache.put(key, JSON.stringify(rows), 21600);
+  } catch(e) {}
+}
+
+function getOpenSessionForToday() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(tenantScopedKey('active_session'));
+  var now = new Date();
+  var today = Utilities.formatDate(now, tz(), 'yyyy-MM-dd');
+  if (cached) {
+    try {
+      var active = JSON.parse(cached);
+      if (active && active.status === 'open' && active.date === today) return active;
+    } catch(e) {}
+  }
+  var rows = getRows(getSheet(SH.SESSIONS));
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].status === 'open' && normDate(rows[i].date, tz()) === today) return rows[i];
+  }
+  return getCurrentAutoSession(now);
+}
+
+function resolveUserTrackingLocation(userId) {
+  var userLocRows = getRows(getSheet(SH.USER_LOC_MAP));
+  var userLocMap = null;
+  for (var i = 0; i < userLocRows.length; i++) {
+    if (String(userLocRows[i].user_id) === String(userId)) {
+      userLocMap = userLocRows[i];
+      break;
+    }
+  }
+  var locId = userLocMap ? userLocMap.attendance_location_id : 1;
+  var allowedDist = userLocMap ? parseInt(userLocMap.allowed_distance || DEFAULT_RADIUS, 10) : DEFAULT_RADIUS;
+  var anchorLat = DEFAULT_LAT;
+  var anchorLng = DEFAULT_LNG;
+  var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
+  for (var j = 0; j < locRows.length; j++) {
+    if (String(locRows[j].attendance_location_id) === String(locId)) {
+      anchorLat = parseFloat(locRows[j].latitude || DEFAULT_LAT);
+      anchorLng = parseFloat(locRows[j].longitude || DEFAULT_LNG);
+      break;
+    }
+  }
+  return { attendanceLocationId: locId, allowedDistance: allowedDist, anchorLat: anchorLat, anchorLng: anchorLng };
+}
+
+// ============================================================
+//  1. REGISTER USER
+//  user_id → nextId(Users)          — integer
+//  UserAttendanceLocationMap id → nextId(UserAttendanceLocationMap) — integer
+// ============================================================
+
+function registerUser(b) {
+  try {
+    if (!b.name || !b.email || !b.password || !b.roleId)
+      return { success: false, message: 'name, email, password and roleId are required' };
+    if (!isValidEmail(b.email))
+      return { success: false, message: 'Valid email required' };
+    if (!hasRole(b.roleId))
+      return { success: false, message: 'Invalid role selected' };
+    if (b.departmentId && !hasDepartment(b.departmentId))
+      return { success: false, message: 'Invalid department selected' };
+    if (String(b.password || '').length < 8)
+      return { success: false, message: 'Password must be at least 8 characters' };
+    if (!isValidMobile(b.mobile))
+      return { success: false, message: 'Invalid mobile number' };
+
+    if (getUserByEmail(b.email))
+      return { success: false, message: 'Email already registered' };
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(6000);
+    try {
+      // ── Numeric user_id ──
+      var userId = nextId(SH.USERS);
+      var roleId = String(b.roleId).trim();
+
+      // Default location: first row of AttendanceLocations (id = 1)
+      var defaultLoc = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP)[0];
+
+      var tenant = getTenantConfig(currentGuid());
+      var instituteName = tenant && tenant.institution ? tenant.institution.name : 'BioAttend Organization';
+
+      getSheet(SH.USERS).appendRow([
+        userId,                        // user_id  (integer)
+        toCleanText(b.instituteId || instituteName, 120),
+        b.departmentId ? parseInt(b.departmentId, 10) : '',  // numeric dept id
+        parseInt(roleId, 10),          // numeric role id
+        toCleanText(b.name, 120),
+        b.dob     || '',
+        toCleanText(b.mobile, 20),
+        String(b.email).toLowerCase(),
+        hashPw(b.password),
+        '',                            // biometric_code — filled later
+        toCleanText(b.deviceId, 120)
+      ]);
+
+      addToUserIndex(userId, b.email);
+
+      // ── Numeric map id ──
+      var locId = b.attendanceLocationId
+        ? parseInt(b.attendanceLocationId, 10)
+        : (defaultLoc ? parseInt(defaultLoc.attendance_location_id, 10) : 1);
+      var mapId = nextId(SH.USER_LOC_MAP);
+      getSheet(SH.USER_LOC_MAP).appendRow([
+        mapId,                         // integer
+        userId,
+        locId,
+        b.allowedDistance || DEFAULT_RADIUS
+      ]);
+
+      invalidate(SH.USERS);
+      appendAuditLog('register_user', userId, normalizeRoleValue(roleId), userId, {
+        email: String(b.email).toLowerCase(),
+        departmentId: b.departmentId || ''
+      });
+      return { success: true, userId: userId, message: 'Account created successfully' };
+    } finally { lock.releaseLock(); }
+  } catch(err) { return { success: false, message: 'registerUser: ' + err }; }
+}
+
+// ============================================================
+//  2. SIGN IN
+// ============================================================
+
+function signInUser(b) {
+  try {
+    var user = getUserByEmail(b.email);
+    if (!user) return { success: false, message: 'No account found for this email' };
+    if (!verifyPw(b.password || '', user.password_hash))
+      return { success: false, message: 'Incorrect password' };
+    if (String(user.password_hash || '').indexOf('v2$') !== 0) {
+      updateUserPasswordHash(user.user_id, hashPw(b.password || ''));
+      user = getUserByEmail(b.email) || user;
+    }
+    var roleName = normalizeRoleValue(user.role_id);
+    var auth = createAuthSession(user.user_id, roleName || String(user.role_id || ''));
+    appendAuditLog('sign_in', user.user_id, roleName, user.user_id, { email: String(user.email || '') });
+    return {
+      success:   true,
+      userId:    user.user_id,
+      name:      user.full_name,
+      roleId:    roleName || String(user.role_id || ''),
+      roleKey:   roleName || String(user.role_id || ''),
+      roleDbId:  String(user.role_id || ''),
+      deptId:    user.department_id,
+      authToken: auth.authToken,
+      authExpiresAt: auth.expiresAt
+    };
+  } catch(err) { return { success: false, message: 'signIn: ' + err }; }
+}
+
+// ============================================================
+//  3. MARK ENTRY
+//  attendance_id → nextId(Attendance)       — integer
+//  location_monitor_id → nextId(LocationMonitor) — integer
+// ============================================================
+
+function markEntry(b) {
+  try {
+    if (!b.userId) return { success: false, message: 'userId required' };
+    var latCheck = (b.latitude === '' || typeof b.latitude === 'undefined') ? null : parseNumber(b.latitude);
+    var lngCheck = (b.longitude === '' || typeof b.longitude === 'undefined') ? null : parseNumber(b.longitude);
+    if ((latCheck !== null || lngCheck !== null) && !isValidCoordinate(latCheck, lngCheck))
+      return { success: false, message: 'Invalid coordinates' };
+
+    var now  = new Date();
+    var t    = tz();
+    var user = getUserById(b.userId);
+    if (!user) return { success: false, message: 'User not found' };
+
+    var deviceCheck  = String(b.deviceId || '').trim();
+    var boundDevice  = String(user.device_identification || '').trim();
+    if (boundDevice && deviceCheck && boundDevice !== deviceCheck)
+      return { success: false, message: 'Attendance blocked: device mismatch' };
+
+    // Resolve location
+    var userLocRows = getRows(getSheet(SH.USER_LOC_MAP));
+    var userLocMap  = null;
+    for (var x = 0; x < userLocRows.length; x++) {
+      if (String(userLocRows[x].user_id) === String(b.userId)) { userLocMap = userLocRows[x]; break; }
+    }
+    var allowedDist = userLocMap ? parseInt(userLocMap.allowed_distance || DEFAULT_RADIUS) : DEFAULT_RADIUS;
+    var locId       = userLocMap ? userLocMap.attendance_location_id : 1;
+
+    var anchorLat = DEFAULT_LAT, anchorLng = DEFAULT_LNG;
+    var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
+    for (var lx = 0; lx < locRows.length; lx++) {
+      if (String(locRows[lx].attendance_location_id) === String(locId)) {
+        anchorLat = parseFloat(locRows[lx].latitude  || DEFAULT_LAT);
+        anchorLng = parseFloat(locRows[lx].longitude || DEFAULT_LNG);
+        break;
+      }
+    }
+
+    var lat = latCheck, lng = lngCheck, dist = 0;
+    if (lat !== null && !isNaN(lat)) {
+      dist = haversine(lat, lng, anchorLat, anchorLng);
+      if (dist > allowedDist) {
+        return { success: false, code: 'TOO_FAR', distance: dist, allowed: allowedDist,
+                 message: 'You are ' + dist + 'm away. Must be within ' + allowedDist + 'm of campus.' };
+      }
+    }
+
+    // Duplicate check
+    var attSheet = getSheet(SH.ATTENDANCE);
+    var lastRow  = attSheet.getLastRow();
+    var dateStr  = Utilities.formatDate(now, t, 'yyyy-MM-dd');
+    if (lastRow >= 2) {
+      var uids  = attSheet.getRange(2, 2, lastRow - 1, 1).getValues();
+      var dates = attSheet.getRange(2, 7, lastRow - 1, 1).getValues();
+      var types = attSheet.getRange(2, 4, lastRow - 1, 1).getValues();
+      for (var j = 0; j < uids.length; j++) {
+        if (String(uids[j][0]).trim() === String(b.userId).trim() &&
+            normDate(dates[j][0], t) === dateStr &&
+            String(types[j][0]).trim() === 'entry') {
+          return { success: false, message: 'Attendance already marked for today.' };
+        }
+      }
+    }
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(6000);
+    try {
+      var timeStr = Utilities.formatDate(now, t, 'HH:mm:ss');
+      var attId   = nextId(SH.ATTENDANCE);   // ← integer
+
+      attSheet.appendRow([
+        attId,
+        b.userId,
+        user.full_name,
+        'entry',
+        timeStr,
+        '',
+        dateStr,
+        b.loginMethod || 'biometric',
+        lat !== null ? lat : '',
+        lng !== null ? lng : '',
+        locId,
+        b.address || '',
+        dist || ''
+      ]);
+
+      if (lat !== null) {
+        var lmId = nextId(SH.LOC_MONITOR);   // ← integer
+        getSheet(SH.LOC_MONITOR).appendRow([lmId, b.userId, lat, lng, dist, now.toISOString()]);
+      }
+
+      SpreadsheetApp.flush();
+      invalidate(SH.ATTENDANCE);
+
+      var activeSession = getOpenSessionForToday();
+      if (activeSession) {
+        pushTeacherNotification({
+          id: 'ntf_' + Date.now(),
+          sessionId: String(activeSession.session_id || ''),
+          teacherId: String(activeSession.teacher_id || ''),
+          userId: String(b.userId || ''),
+          studentName: String(user.full_name || ''),
+          message: String(user.full_name || 'Student') + ' marked attendance at ' + timeStr,
+          time: timeStr, date: dateStr, createdAt: now.toISOString()
+        });
+      }
+      appendAuditLog('mark_entry', b.userId, normalizeRoleValue(user.role_id), b.userId,
+        { time: timeStr, date: dateStr, locationId: locId, distance: dist });
+
+      return {
+        success: true, attendanceId: attId,
+        message: '\u2713 Attendance marked at ' + timeStr,
+        name: user.full_name, date: dateStr, time: timeStr,
+        location: b.address || (lat ? lat + ', ' + lng : 'not captured'),
+        distanceFromCentre: dist
+      };
+    } finally { lock.releaseLock(); }
+  } catch(err) { return { success: false, message: 'markEntry: ' + err }; }
+}
+
+// ============================================================
+//  4. MARK EXIT
+// ============================================================
+
+function markExit(b) {
+  try {
+    if (!b.userId) return { success: false, message: 'userId required' };
+    var latCheck = (b.latitude === '' || typeof b.latitude === 'undefined') ? null : parseNumber(b.latitude);
+    var lngCheck = (b.longitude === '' || typeof b.longitude === 'undefined') ? null : parseNumber(b.longitude);
+    if ((latCheck !== null || lngCheck !== null) && !isValidCoordinate(latCheck, lngCheck))
+      return { success: false, message: 'Invalid coordinates' };
+
+    var now     = new Date();
+    var t       = tz();
+    var dateStr = Utilities.formatDate(now, t, 'yyyy-MM-dd');
+    var timeStr = Utilities.formatDate(now, t, 'HH:mm:ss');
+    var sheet   = getSheet(SH.ATTENDANCE);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, message: 'No attendance records found' };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var row = data[i];
+      if (String(row[1]).trim() !== String(b.userId).trim()) continue;
+      if (normDate(row[6], t) !== dateStr) continue;
+      if (String(row[3]).trim() !== 'entry') continue;
+      if (String(row[5]).trim()) continue;
+
+      var entryTimeStr = String(row[4] || '');
+      var durationMins = '';
+      if (entryTimeStr) {
+        var entryDt = new Date(dateStr + 'T' + entryTimeStr);
+        if (!isNaN(entryDt.getTime())) {
+          durationMins = Math.max(0, Math.round((now - entryDt) / 60000));
+        }
+      }
+
+      var xlat  = latCheck !== null ? latCheck : '';
+      var xlng  = lngCheck !== null ? lngCheck : '';
+      var xdist = (xlat !== '' && xlng !== '') ? haversine(xlat, xlng, DEFAULT_LAT, DEFAULT_LNG) : '';
+
+      var lock = LockService.getScriptLock();
+      lock.waitLock(6000);
+      try {
+        var sheetRow = i + 2;
+        sheet.getRange(sheetRow, 4, 1, 1).setValue('exit');
+        sheet.getRange(sheetRow, 6, 1, 1).setValue(timeStr);
+        if (xlat !== '') {
+          sheet.getRange(sheetRow, 9, 1, 5).setValues([[xlat, xlng, '', b.address || '', xdist]]);
+        }
+        if (xlat !== '') {
+          var lmId = nextId(SH.LOC_MONITOR);  // ← integer
+          getSheet(SH.LOC_MONITOR).appendRow([lmId, b.userId, xlat, xlng, xdist, now.toISOString()]);
+        }
+        SpreadsheetApp.flush();
+        invalidate(SH.ATTENDANCE);
+      } finally { lock.releaseLock(); }
+
+      appendAuditLog('mark_exit', b.userId, '', b.userId, { time: timeStr, date: dateStr, distance: xdist });
+      var hrs = durationMins !== '' ? Math.floor(durationMins / 60) : 0;
+      var mins = durationMins !== '' ? durationMins % 60 : 0;
+      var durLabel = durationMins !== '' ? (hrs > 0 ? hrs + 'h ' + mins + 'm' : mins + 'm') : '';
+      return {
+        success: true,
+        message: '\u2713 Exit recorded at ' + timeStr + (durLabel ? ' \u00b7 ' + durLabel : ''),
+        exitTime: timeStr, duration: durLabel, durationMins: durationMins,
+        location: b.address || (xlat ? xlat + ', ' + xlng : 'not captured'), distance: xdist
+      };
+    }
+    return { success: false, message: 'No entry record found for today (' + dateStr + '). Mark attendance first.' };
+  } catch(err) { return { success: false, message: 'markExit: ' + err }; }
+}
+
+// ============================================================
+//  5. TRACK STUDENT LOCATION
+// ============================================================
+
+function trackStudentLocation(b) {
+  try {
+    if (!b.userId) return { success: false, message: 'userId required' };
+    var lat = parseFloat(b.latitude), lng = parseFloat(b.longitude);
+    if (isNaN(lat) || isNaN(lng)) return { success: false, message: 'invalid coordinates' };
+    if (!isValidCoordinate(lat, lng)) return { success: false, message: 'invalid coordinates' };
+    var user = getUserById(b.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    var now = new Date();
+    var track = resolveUserTrackingLocation(b.userId);
+    var dist = haversine(lat, lng, track.anchorLat, track.anchorLng);
+    var lmId = nextId(SH.LOC_MONITOR);   // ← integer
+    getSheet(SH.LOC_MONITOR).appendRow([lmId, b.userId, lat, lng, dist, now.toISOString()]);
+    return { success: true, message: 'Location tracked', distanceFromCentre: dist,
+             attendanceLocationId: track.attendanceLocationId };
+  } catch(err) { return { success: false, message: 'trackStudentLocation: ' + err }; }
+}
+
+// ============================================================
+//  6. GET MY ATTENDANCE
+// ============================================================
+
+function getMyAttendance(b) {
+  try {
+    if (!b.userId) return { success: false, message: 'userId required' };
+    var t = tz(), sheet = getSheet(SH.ATTENDANCE), lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, records: [] };
+    var data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    var entryMap = {}, exitMap = {};
+    data.forEach(function(row) {
+      if (String(row[1]).trim() !== String(b.userId).trim()) return;
+      var date = normDate(row[6], t);
+      if (String(row[3]).trim() === 'entry') entryMap[date] = row;
+      if (String(row[3]).trim() === 'exit')  exitMap[date]  = row;
+    });
+    var records = Object.keys(entryMap).map(function(date) {
+      var e = entryMap[date], x = exitMap[date] || null;
+      var eDur = '';
+      if (x) {
+        var eDt = new Date(date + 'T' + String(e[4]));
+        var xDt = new Date(date + 'T' + String(x[5]));
+        if (!isNaN(eDt.getTime()) && !isNaN(xDt.getTime())) {
+          var dm = Math.max(0, Math.round((xDt - eDt) / 60000));
+          var h = Math.floor(dm/60), m = dm%60;
+          eDur = h > 0 ? h+'h '+m+'m' : m+'m';
+        }
+      }
+      return { date: date, entryTime: e[4]||'', exitTime: x ? x[5]:'',
+               duration: eDur, loginMethod: e[7]||'', address: e[11]||'',
+               distanceFromCentre: e[12]||'' };
+    });
+    records.sort(function(a, b) { return b.date.localeCompare(a.date); });
+    return { success: true, records: records };
+  } catch(err) { return { success: false, message: 'getMyAttendance: ' + err }; }
+}
+
+// ============================================================
+//  7. SESSIONS
+//  session_id → nextId(Sessions) — integer
+// ============================================================
+
+function createSession(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    if (!b.subject || !b.windowMinutes)
+      return { success: false, message: 'subject and windowMinutes required' };
+    var t = tz(), now = new Date();
+    var sessId = nextId(SH.SESSIONS);   // ← integer
+    var date   = Utilities.formatDate(now, t, 'yyyy-MM-dd');
+    var start  = Utilities.formatDate(now, t, 'HH:mm:ss');
+    var end    = Utilities.formatDate(new Date(now.getTime() + b.windowMinutes*60000), t, 'HH:mm:ss');
+    var sheet  = getSheet(SH.SESSIONS);
+    var data   = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][1]) === String(auth.session.user_id) && data[i][7] === 'open')
+        sheet.getRange(i+1, 8).setValue('closed');
+    }
+    sheet.appendRow([sessId, auth.session.user_id, b.teacherName||'', b.subject, date, start, end, 'open', b.windowMinutes]);
+        CacheService.getScriptCache().put(tenantScopedKey('active_session'), JSON.stringify({
+      session_id: sessId, teacher_id: auth.session.user_id, subject: b.subject,
+      date: date, start_time: start, end_time: end, status: 'open', window_minutes: b.windowMinutes
+    }), TTL_SESSION);
+    appendAuditLog('create_session', auth.session.user_id, auth.session.role_name, '',
+      { sessionId: sessId, subject: b.subject });
+    return { success: true, sessionId: sessId, subject: b.subject, startTime: start, endTime: end };
+  } catch(err) { return { success: false, message: 'createSession: ' + err }; }
+}
+
+function closeSession(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var sheet = getSheet(SH.SESSIONS), data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(b.sessionId)) {
+        if (String(auth.session.role_name) !== 'admin' && String(data[i][1]) !== String(auth.session.user_id))
+          return { success: false, message: 'Access denied' };
+        sheet.getRange(i+1, 8).setValue('closed');
+        CacheService.getScriptCache().remove(tenantScopedKey('active_session'));
+        appendAuditLog('close_session', auth.session.user_id, auth.session.role_name, '', { sessionId: b.sessionId });
+        return { success: true };
+      }
+    }
+    return { success: false, message: 'Session not found' };
+  } catch(err) { return { success: false, message: 'closeSession: ' + err }; }
+}
+
+function getActiveSession(b) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get(tenantScopedKey('active_session'));
+    if (cached) {
+      var s = JSON.parse(cached), now = new Date(), t = tz();
+      var today = Utilities.formatDate(now, t, 'yyyy-MM-dd');
+      if (s.status === 'open' && s.date === today) {
+        var endDt = new Date(s.date + 'T' + s.end_time);
+        if (now <= endDt)
+          return { success: true, active: true, session: s, secondsLeft: Math.max(0, Math.round((endDt-now)/1000)) };
+      }
+      cache.remove(tenantScopedKey('active_session'));
+    }
+    var autoSession = getCurrentAutoSession(new Date());
+    if (autoSession) {
+      var autoEnd = new Date(autoSession.date + 'T' + autoSession.end_time);
+      return { success: true, active: true, session: autoSession,
+               secondsLeft: Math.max(0, Math.round((autoEnd-new Date())/1000)) };
+    }
+    var t2 = tz(), today2 = Utilities.formatDate(new Date(), t2, 'yyyy-MM-dd');
+    var rows = getRows(getSheet(SH.SESSIONS)), now2 = new Date();
+    for (var i = 0; i < rows.length; i++) {
+      var s = rows[i];
+      if (s.status === 'open' && normDate(s.date, t2) === today2) {
+        var st = new Date(s.date + 'T' + s.start_time), en = new Date(s.date + 'T' + s.end_time);
+        if (now2 >= st && now2 <= en) {
+          var secs = Math.max(0, Math.round((en-now2)/1000));
+          cache.put(tenantScopedKey('active_session'), JSON.stringify(s), TTL_SESSION);
+          return { success: true, active: true, session: s, secondsLeft: secs };
+        }
+      }
+    }
+    return { success: true, active: false };
+  } catch(err) { return { success: false, message: 'getActiveSession: ' + err }; }
+}
+
+function getSessions(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var t = tz(), rows = getRows(getSheet(SH.SESSIONS));
+    var today = Utilities.formatDate(new Date(), t, 'yyyy-MM-dd');
+    var autoRows = getAutoSessionsForDate(today);
+    rows = autoRows.concat(rows);
+    if (b.userId) {
+      rows = rows.filter(function(r) {
+        return String(r.teacher_id) === String(auth.session.user_id) || String(r.teacher_id) === 'ALL';
+      });
+    }
+    var attSheet = getSheet(SH.ATTENDANCE), attLast = attSheet.getLastRow(), countMap = {};
+    if (attLast >= 2) {
+      var uids  = attSheet.getRange(2, 2, attLast-1, 1).getValues();
+      var dates = attSheet.getRange(2, 7, attLast-1, 1).getValues();
+      var types = attSheet.getRange(2, 4, attLast-1, 1).getValues();
+      uids.forEach(function(u, i) {
+        if (String(types[i][0]).trim() !== 'entry') return;
+        var key = normDate(dates[i][0], t);
+        countMap[key] = (countMap[key] || 0) + 1;
+      });
+    }
+    return {
+      success: true,
+      sessions: rows.map(function(s) {
+        var status = s.status;
+        if (s.is_auto) {
+          var st = new Date(s.date+'T'+s.start_time), en = new Date(s.date+'T'+s.end_time), now = new Date();
+          status = now >= st && now <= en ? 'open' : 'scheduled';
+        }
+        return { sessionId: s.session_id, subject: s.subject, date: normDate(s.date, t),
+                 startTime: s.start_time, endTime: s.end_time, status: status,
+                 presentCount: countMap[normDate(s.date, t)] || 0 };
+      }).reverse().slice(0, 20)
+    };
+  } catch(err) { return { success: false, message: 'getSessions: ' + err }; }
+}
+
+function getTeacherNotifications(b) {
+  try {
+    if (!b.sessionId) return { success: false, message: 'sessionId required' };
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var cache = CacheService.getScriptCache();
+    var rows = [];
+    var cached = cache.get(tenantScopedKey('teacher_notif_' + b.sessionId));
+    if (cached) { try { rows = JSON.parse(cached) || []; } catch(e) {} }
+    if (b.teacherId) {
+      rows = rows.filter(function(r) {
+        var tid = String(r.teacherId || '');
+        return tid === String(auth.session.user_id) || tid === 'ALL';
+      });
+    }
+    return { success: true, notifications: rows };
+  } catch(err) { return { success: false, message: 'getTeacherNotifications: ' + err }; }
+}
+
+// ============================================================
+//  8. DASHBOARD
+// ============================================================
+
+function getDashboard(b) {
+  try {
+    if (!b.sessionId) return { success: false, message: 'sessionId required' };
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var cacheKey = tenantScopedKey('dash_' + b.sessionId);
+    var cached = CacheService.getScriptCache().get(cacheKey);
+    if (cached) return JSON.parse(cached);
+    var t = tz(), today = Utilities.formatDate(new Date(), t, 'yyyy-MM-dd');
+    var userRows = getCached(SH.USERS, TTL_LOOKUP);
+    var studentRoleId = findRoleIdByName('student');
+    var students = userRows.filter(function(u) {
+      return normalizeRoleValue(u.role_id) === 'student' ||
+             (studentRoleId && String(u.role_id) === studentRoleId);
+    });
+    var userMap = buildMap(students, 'user_id');
+    var attSheet = getSheet(SH.ATTENDANCE), attLast = attSheet.getLastRow(), presentMap = {};
+    if (attLast >= 2) {
+      var rows = attSheet.getRange(2, 1, attLast-1, 13).getValues();
+      rows.forEach(function(row) {
+        if (String(row[3]).trim() !== 'entry') return;
+        if (normDate(row[6], t) !== today) return;
+        presentMap[String(row[1]).trim()] = { entryTime: row[4]||'', exitTime: row[5]||'',
+          method: row[7]||'', address: row[11]||'', distance: row[12]||'' };
+      });
+    }
+    var present = [], absent = [];
+    students.forEach(function(s) {
+      var uid = String(s.user_id).trim();
+      if (presentMap[uid]) {
+        var pm = presentMap[uid];
+        present.push({ userId: uid, name: s.full_name, email: s.email, department: s.department_id,
+          entryTime: pm.entryTime, exitTime: pm.exitTime, method: pm.method,
+          address: pm.address, distance: pm.distance });
+      } else {
+        absent.push({ userId: uid, name: s.full_name, email: s.email, department: s.department_id });
+      }
+    });
+    var result = { success: true, total: students.length, presentCount: present.length,
+                   absentCount: absent.length, present: present, absent: absent };
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), TTL_DASH); } catch(e) {}
+    return result;
+  } catch(err) { return { success: false, message: 'getDashboard: ' + err }; }
+}
+
+// ============================================================
+//  9. STUDENTS ROSTER
+// ============================================================
+
+function getStudents(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var studentRoleId = findRoleIdByName('student');
+    var rows = getCached(SH.USERS, TTL_LOOKUP)
+      .filter(function(r) {
+        return normalizeRoleValue(r.role_id) === 'student' ||
+               (studentRoleId && String(r.role_id) === studentRoleId);
+      })
+      .map(function(r) {
+        return { userId: r.user_id, name: r.full_name, email: r.email,
+                 department: r.department_id, mobile: r.mobile,
+                 hasBio: !!r.biometric_code, hasDevice: !!r.device_identification };
+      });
+    return { success: true, students: rows, total: rows.length };
+  } catch(err) { return { success: false, message: 'getStudents: ' + err }; }
+}
+
+// ============================================================
+//  10. EXPORT ATTENDANCE
+// ============================================================
+
+function exportAttendance(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var t = tz(), sheet = getSheet(SH.ATTENDANCE), lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, csv: '', rowCount: 0 };
+    var data = sheet.getRange(2, 1, lastRow-1, 13).getValues();
+    var header = ['attendance_id','user_id','full_name','type_attendance','entry_time','exit_time',
+                  'attendance_date','login_method','latitude','longitude','attendance_location_id',
+                  'address','distance_from_centre'];
+    var lines = [header.join(',')];
+    data.forEach(function(row) {
+      if (b.userId && String(row[1]).trim() !== String(b.userId).trim()) return;
+      if (b.date   && normDate(row[6], t) !== b.date) return;
+      lines.push(row.map(function(c) { return '"' + String(c||'').replace(/"/g,'""') + '"'; }).join(','));
+    });
+    return { success: true, csv: lines.join('\n'), rowCount: lines.length - 1 };
+  } catch(err) { return { success: false, message: 'exportAttendance: ' + err }; }
+}
+
+// ============================================================
+//  11. BIOMETRIC & DEVICE
+// ============================================================
+
+function getBiometric(b) {
+  try {
+    var user = getUserByEmail(b.email);
+    if (!user) return { success: false, message: 'No account found. Please register first.' };
+    if (!user.biometric_code)
+      return { success: false, message: 'No biometric registered. Please register fingerprint first.' };
+    return { success: true, credentialId: user.biometric_code, userId: user.user_id, name: user.full_name };
+  } catch(err) { return { success: false, message: 'getBiometric: ' + err }; }
+}
+
+function saveBiometric(b) {
+  try {
+    var sheet = getSheet(SH.USERS), last = sheet.getLastRow();
+    var uids = sheet.getRange(2, 1, last-1, 1).getValues();
+    for (var i = 0; i < uids.length; i++) {
+      if (String(uids[i][0]) === String(b.userId)) {
+        sheet.getRange(i+2, 10).setValue(b.credentialId);
+        invalidate(SH.USERS);
+        return { success: true };
+      }
+    }
+    return { success: false, message: 'User not found' };
+  } catch(err) { return { success: false, message: 'saveBiometric: ' + err }; }
+}
+
+function registerDevice(b) {
+  try {
+    if (!b.userId || !b.deviceId) return { success: false, message: 'userId and deviceId required' };
+    var user = getUserById(b.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    var stored = String(user.device_identification || '').trim();
+    if (stored && stored !== String(b.deviceId).trim())
+      return { success: false, alreadyBound: true, message: 'Account already bound to another device.' };
+    var sheet = getSheet(SH.USERS), last = sheet.getLastRow();
+    var uids = sheet.getRange(2, 1, last-1, 1).getValues();
+    for (var i = 0; i < uids.length; i++) {
+      if (String(uids[i][0]) === String(b.userId)) {
+        sheet.getRange(i+2, 11).setValue(b.deviceId);
+        invalidate(SH.USERS);
+        return { success: true, message: stored ? 'Device confirmed' : 'Device registered' };
+      }
+    }
+    return { success: false, message: 'User not found' };
+  } catch(err) { return { success: false, message: 'registerDevice: ' + err }; }
+}
+
+function checkDevice(b) {
+  try {
+    if (!b.userId || !b.deviceId) return { success: false, message: 'userId and deviceId required' };
+    var user = getUserById(b.userId);
+    if (!user) return { success: false, message: 'User not found' };
+    var stored = String(user.device_identification || '').trim();
+    if (!stored) return { success: true, status: 'unbound' };
+    if (stored === String(b.deviceId).trim()) return { success: true, status: 'match' };
+    return { success: false, status: 'mismatch', message: 'Account registered to a different device.' };
+  } catch(err) { return { success: false, message: 'checkDevice: ' + err }; }
+}
+
+// ============================================================
+//  12. LOOKUP TABLES
+// ============================================================
+
+function getLookup(sheetName) {
+  try { return { success: true, data: getCached(sheetName, TTL_LOOKUP) }; }
+  catch(err) { return { success: false, message: 'getLookup: ' + err }; }
+}
+
+function getUserLocMap(b) {
+  try {
+    var rows = getRows(getSheet(SH.USER_LOC_MAP));
+    if (b.userId) rows = rows.filter(function(r) { return String(r.user_id) === String(b.userId); });
+    return { success: true, data: rows };
+  } catch(err) { return { success: false, message: 'getUserLocMap: ' + err }; }
+}
+
+// ============================================================
+//  13. ADMIN WRITE — all use nextId() for integer PKs
+// ============================================================
+
+function addDepartment(b) {
+  try {
+    var auth = requireAuth(b, ['admin']);
+    if (!auth.ok) return auth.error;
+    if (!b.name) return { success: false, message: 'name required' };
+    if (b.email && !isValidEmail(b.email))
+      return { success: false, message: 'Valid department email required' };
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(6000);
+    try {
+      var deptId = nextId(SH.DEPARTMENTS);   // ← integer (1, 2, 3…)
+      getSheet(SH.DEPARTMENTS).appendRow([
+        deptId,
+        toCleanText(b.name, 120),
+        toCleanText(b.inCharge, 120),
+        toCleanText(b.email, 120)
+      ]);
+      invalidate(SH.DEPARTMENTS);
+      appendAuditLog('add_department', auth.session.user_id, auth.session.role_name, '', { departmentId: deptId });
+      return { success: true, departmentId: deptId, message: 'Department added' };
+    } finally { lock.releaseLock(); }
+  } catch(err) { return { success: false, message: 'addDepartment: ' + err }; }
+}
+
+function addAttendanceLocation(b) {
+  try {
+    var auth = requireAuth(b, ['admin']);
+    if (!auth.ok) return auth.error;
+    if (!b.name || !b.latitude || !b.longitude)
+      return { success: false, message: 'name, latitude and longitude required' };
+    var lat = parseNumber(b.latitude), lng = parseNumber(b.longitude);
+    if (lat === null || lng === null)
+      return { success: false, message: 'Valid latitude and longitude required' };
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(6000);
+    try {
+      var locId = nextId(SH.ATT_LOCATIONS);  // ← integer (1, 2, 3…)
+      getSheet(SH.ATT_LOCATIONS).appendRow([locId, toCleanText(b.name, 120), lat, lng]);
+      invalidate(SH.ATT_LOCATIONS);
+      appendAuditLog('add_location', auth.session.user_id, auth.session.role_name, '', { locationId: locId });
+      return { success: true, locationId: locId, message: 'Location added' };
+    } finally { lock.releaseLock(); }
+  } catch(err) { return { success: false, message: 'addAttendanceLocation: ' + err }; }
+}
+
+function addUserLocMap(b) {
+  try {
+    var auth = requireAuth(b, ['admin']);
+    if (!auth.ok) return auth.error;
+    if (!b.userId || !b.locationId) return { success: false, message: 'userId and locationId required' };
+    if (!getUserById(b.userId)) return { success: false, message: 'User not found' };
+    var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
+    var hasLoc = locRows.some(function(r) { return String(r.attendance_location_id) === String(b.locationId); });
+    if (!hasLoc) return { success: false, message: 'attendance location not found' };
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(6000);
+    try {
+      var mapId = nextId(SH.USER_LOC_MAP);   // ← integer
+      getSheet(SH.USER_LOC_MAP).appendRow([
+        mapId, b.userId,
+        parseInt(b.locationId, 10),
+        parseInt(b.allowedDistance || DEFAULT_RADIUS, 10)
+      ]);
+      appendAuditLog('add_user_location_map', auth.session.user_id, auth.session.role_name, b.userId,
+        { locationId: b.locationId });
+      return { success: true, mapId: mapId, message: 'Mapping added' };
+    } finally { lock.releaseLock(); }
+  } catch(err) { return { success: false, message: 'addUserLocMap: ' + err }; }
+}
+
+// ============================================================
+//  14. SETUP — seeds all tables with numeric IDs
+// ============================================================
+
+function setupSheets() {
+  try {
+    var created = [];
+    Object.keys(SH).forEach(function(key) { getSheet(SH[key]); created.push(SH[key]); });
+
+    // Roles: id 1 = admin, 2 = teacher, 3 = student
+    ensureExactRows('Roles', [
+      [1, 'admin'],
+      [2, 'teacher'],
+      [3, 'student']
+    ]);
+
+    // Departments: id 1 = CSE
+    ensureExactRows('Departments', [
+      [1, 'CSE', 'Dr. Sunitha N R', 'nrsunitha@sit.ac.in']
+    ]);
+
+    // Attendance types: 1 = entry, 2 = exit
+    ensureExactRows('AttendanceType', [
+      [1, 'entry'],
+      [2, 'exit']
+    ]);
+
+    // Attendance windows: numeric ids
+    ensureExactRows('AttendanceWindows', [
+      [1, 'Morning 1',   '09:00', 10, 'active'],
+      [2, 'Morning 2',   '10:30', 10, 'active'],
+      [3, 'Afternoon 1', '14:00', 10, 'active'],
+      [4, 'Afternoon 2', '15:30', 10, 'active']
+    ]);
+
+    // Attendance locations: 1, 2, 3
+    var locSheet = getSheet(SH.ATT_LOCATIONS);
+    if (locSheet.getLastRow() < 2) {
+      locSheet.appendRow([1, 'SIT Campus Main Block',    13.32603, 77.12621]);
+      locSheet.appendRow([2, 'SIT Campus CS Lab Block',  13.32620, 77.12650]);
+      locSheet.appendRow([3, 'SIT Campus Seminar Hall',  13.32580, 77.12600]);
+    }
+
+    return { success: true, message: 'All sheets created and seeded with numeric IDs.', sheets: created };
+  } catch(err) { return { success: false, message: 'setupSheets: ' + err }; }
+}
+
+// ============================================================
+//  15. RESET USERS SHEET (admin utility)
+// ============================================================
+
+function resetUsersSheet() {
+  try {
+    ensureExactRows(SH.USERS, []);
+    ensureExactRows(SH.USER_INDEX, []);
+    ensureExactRows(SH.USER_LOC_MAP, []);
+    invalidate(SH.USERS);
+    invalidate(SH.USER_INDEX);
+    invalidate(SH.USER_LOC_MAP);
+    return { success: true, message: 'Users, UserIndex and UserLocMap cleared.' };
+  } catch(err) { return { success: false, message: 'resetUsersSheet: ' + err }; }
+}
+
+// ============================================================
+//  16. DEBUG
+// ============================================================
+
+function debugInfo() {
+  try {
+    var sheets = ss().getSheets().map(function(s) {
+      return { name: s.getName(), dataRows: Math.max(0, s.getLastRow()-1) };
+    });
+    return { success: true, spreadsheet: ss().getName(), sheets: sheets,
+             geofence: DEFAULT_RADIUS + 'm around (' + DEFAULT_LAT + ', ' + DEFAULT_LNG + ')' };
+  } catch(err) { return { success: false, message: 'debug: ' + err }; }
+}
+
+
+
