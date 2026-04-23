@@ -4,6 +4,16 @@ const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZ
 const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
 
 const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const EXPECTED_TENANTS = {
+  '1': {
+    name: 'SIT',
+    apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
+  },
+  '2': {
+    name: 'SSIT',
+    apiUrl: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec'
+  }
+};
 
 
 // â”€â”€ FALLBACK TENANTS (OFFLINE MODE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -184,6 +194,22 @@ function getFallbackTenantProfile(guid) {
   return VALID_GUIDS.has(normalized) ? FALLBACK_TENANTS[normalized] || null : null;
 }
 
+function normalizeTenantName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isExpectedTenantProfile(guid, profile) {
+  const expected = EXPECTED_TENANTS[String(guid || '').trim()];
+  if (!expected || !profile) return false;
+  const profileName = normalizeTenantName(profile?.institution?.name || profile?.name || '');
+  const expectedName = normalizeTenantName(expected.name);
+  const profileApi = String(profile?.apiUrl || '').trim();
+  const expectedApi = String(expected.apiUrl || '').trim();
+  if (profileName && profileName !== expectedName) return false;
+  if (profileApi && profileApi !== expectedApi) return false;
+  return true;
+}
+
 function getDefaultTenantProfile(guid) {
   const fallback = getFallbackTenantProfile(guid);
   if (fallback) return fallback;
@@ -196,6 +222,10 @@ function readCachedTenant(guid) {
     if (!raw) return null;
     const cached = JSON.parse(raw);
     if (!cached?.guid || String(cached.guid) !== String(guid)) return null;
+    if (!isExpectedTenantProfile(guid, cached.data)) {
+      localStorage.removeItem(tenantCacheKey(guid));
+      return null;
+    }
     if (!cached?.expiresAt || Date.now() > cached.expiresAt) {
       localStorage.removeItem(tenantCacheKey(guid));
       return null;
@@ -225,7 +255,7 @@ async function fetchTenantProfile(guid) {
       console.log('[tenant] fetching Nerve profile for GUID:', guid);
       const payload = await jsonpRequest(`${NERVE_URL}${joiner}getApplicationFromGuid=${encodeURIComponent(guid)}`);
       console.log('[tenant] Nerve response:', payload);
-      if (payload?.success && String(payload.guid || guid) === String(guid) && payload?.apiUrl) return payload;
+      if (payload?.success && String(payload.guid || guid) === String(guid) && payload?.apiUrl && isExpectedTenantProfile(guid, payload)) return payload;
     } catch (e) {
       console.warn('[tenant] Nerve lookup failed:', e);
     }
@@ -313,7 +343,7 @@ async function bootTenant() {
       return;
     }
     const cachedProfile = readCachedTenant(guid);
-    const fallbackProfile = cachedProfile || getDefaultTenantProfile(guid);
+    const fallbackProfile = cachedProfile || getFallbackTenantProfile(guid);
     if (!fallbackProfile) {
       setTenantLoading(true, 'Invalid tenant link');
       return;
