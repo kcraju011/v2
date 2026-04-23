@@ -1,5 +1,4 @@
-﻿// â”€â”€ CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€ CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+﻿
 const DEFAULT_TENANT_API = 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev';
 
 const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikHyExxYs20J842q244K0MJ0VfwL5KgMDTb7E3uMN2sWhj0njYg/exec';
@@ -8,30 +7,13 @@ const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 
 // â”€â”€ FALLBACK TENANTS (OFFLINE MODE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const VALID_GUIDS = new Set(['1', '2']);
+
 const FALLBACK_TENANTS = {
 
   '1': {
     success: true,
     guid: '1',
-    orgType: 'college',
-    institution: {
-      name: 'BioAttend Main',
-      city: 'Tumakuru',
-      logoUrl: '',
-      website: '',
-      address: 'Main tenant workspace'
-    },
-    application: {
-      id: 105,
-      name: 'Attendance monitoring',
-      description: 'Multi-tenant biometric attendance monitoring'
-    },
-    apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
-  },
-
-  '2': {
-    success: true,
-    guid: '2',
     orgType: 'college',
     institution: {
       name: 'SIT',
@@ -41,16 +23,16 @@ const FALLBACK_TENANTS = {
       address: 'Siddaganga Institute of Technology'
     },
     application: {
-      id: 105,
+      id: 101,
       name: 'Attendance monitoring',
       description: 'Biometric attendance for students, teachers and employees'
     },
     apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
 
-  '3': {
+  '2': {
     success: true,
-    guid: '3',
+    guid: '2',
     orgType: 'college',
     institution: {
       name: 'SSIT',
@@ -60,12 +42,13 @@ const FALLBACK_TENANTS = {
       address: 'Sri Siddhartha Institute of Technology'
     },
     application: {
-      id: 105,
+      id: 102,
       name: 'Attendance monitoring',
-      description: 'Biometric attendance for multi-tenant institutions'
+      description: 'Biometric attendance for students, teachers and employees'
     },
     apiUrl: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec'
-  }
+  },
+
 };
 
 // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -94,7 +77,7 @@ let tenantState   = {
 // â”€â”€ API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function readGuidFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  return String(params.get('q') || '1').trim();
+  return String(params.get('q') || '').trim();
 }
 
 function tenantCacheKey(guid) {
@@ -197,30 +180,14 @@ function togglePw(id) { const i = document.getElementById(id); i.type = i.type =
 function fmtTime(s) { const m = Math.floor(Math.max(0,s)/60), x = Math.max(0,s)%60; return String(m).padStart(2,'0')+':'+String(x).padStart(2,'0'); }
 
 function getFallbackTenantProfile(guid) {
-  return FALLBACK_TENANTS[String(guid || '').trim()] || null;
+  const normalized = String(guid || '').trim();
+  return VALID_GUIDS.has(normalized) ? FALLBACK_TENANTS[normalized] || null : null;
 }
 
 function getDefaultTenantProfile(guid) {
   const fallback = getFallbackTenantProfile(guid);
   if (fallback) return fallback;
-  return {
-    success: true,
-    guid: String(guid || '1'),
-    orgType: '',
-    institution: {
-      name: 'BioAttend',
-      city: '',
-      logoUrl: '',
-      website: '',
-      address: ''
-    },
-    application: {
-      id: '',
-      name: 'Attendance monitoring',
-      description: 'Biometric attendance system'
-    },
-    apiUrl: DEFAULT_TENANT_API
-  };
+  return null;
 }
 
 function readCachedTenant(guid) {
@@ -250,10 +217,14 @@ function cacheTenantProfile(guid, data) {
 }
 
 async function fetchTenantProfile(guid) {
+  const normalizedGuid = String(guid || '').trim();
+  if (!VALID_GUIDS.has(normalizedGuid)) return null;
   if (NERVE_URL) {
     try {
       const joiner = NERVE_URL.includes('?') ? '&' : '?';
+      console.log('[tenant] fetching Nerve profile for GUID:', guid);
       const payload = await jsonpRequest(`${NERVE_URL}${joiner}getApplicationFromGuid=${encodeURIComponent(guid)}`);
+      console.log('[tenant] Nerve response:', payload);
       if (payload?.success && String(payload.guid || guid) === String(guid) && payload?.apiUrl) return payload;
     } catch (e) {
       console.warn('[tenant] Nerve lookup failed:', e);
@@ -319,21 +290,39 @@ async function bootTenant() {
   const guid = readGuidFromUrl();
   tenantState.guid = guid;
   setTenantLoading(true, 'Loading organization...');
+  let invalidLink = false;
   try {
     console.info('[tenant] boot start', { guid });
-    const cached = readCachedTenant(guid);
-    const tenantProfile = cached || await fetchTenantProfile(guid);
+    if (!VALID_GUIDS.has(String(guid))) {
+      invalidLink = true;
+      throw new Error('Invalid tenant link');
+    }
+    try { localStorage.removeItem('tenant'); } catch (e) {}
+    const tenantProfile = await fetchTenantProfile(guid);
     if (!tenantProfile?.apiUrl && !tenantProfile?.institution) throw new Error('Tenant profile is incomplete');
     applyTenantBranding({ ...tenantProfile, guid });
     cacheTenantProfile(guid, { ...tenantProfile, guid });
     await loadRegisterLookups();
   } catch (e) {
     console.warn('[tenant] boot fallback', e);
-    applyTenantBranding({ ...getDefaultTenantProfile(guid), guid });
+    if (invalidLink) {
+      const box = document.getElementById('tenant-loader');
+      const label = document.getElementById('tenant-loader-text');
+      if (label) label.textContent = 'Invalid tenant link';
+      if (box) box.innerHTML = '<strong>Invalid link</strong><span>Please use a valid tenant URL with q=1 or q=2.</span>';
+      return;
+    }
+    const cachedProfile = readCachedTenant(guid);
+    const fallbackProfile = cachedProfile || getDefaultTenantProfile(guid);
+    if (!fallbackProfile) {
+      setTenantLoading(true, 'Invalid tenant link');
+      return;
+    }
+    applyTenantBranding({ ...fallbackProfile, guid });
     toast('Using fallback tenant configuration', 'warn');
     await loadRegisterLookups();
   } finally {
-    setTenantLoading(false);
+    if (!invalidLink) setTenantLoading(false);
   }
 }
 

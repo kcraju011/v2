@@ -21,7 +21,7 @@ var TENANT_HEADERS = [
 
 var DEFAULT_TENANTS = [
   {
-    guid: '2',
+    guid: '1',
     alias: 'SIT',
     institution_name: 'SIT',
     org_type: 'college',
@@ -31,12 +31,12 @@ var DEFAULT_TENANTS = [
     application_id: '101',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
-    logo_url: 'https://web.sit.ac.in/',
+    logo_url: 'https://web.sit.ac.in/wp-content/uploads/2025/03/SIT-Logo-1.png',
     website: '',
     status: 'active'
   },
   {
-    guid: '3',
+    guid: '2',
     alias: 'SSIT',
     institution_name: 'SSIT',
     org_type: 'college',
@@ -46,7 +46,7 @@ var DEFAULT_TENANTS = [
     application_id: '102',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
-    logo_url: 'https://ssahe.edu.in/ssit/',
+    logo_url: 'https://ssit.edu.in/img/ssit-logo.png',
     website: '',
     status: 'active'
   }
