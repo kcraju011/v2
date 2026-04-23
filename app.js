@@ -101,6 +101,8 @@ function showAttendanceCard(data, userId) {
       <div class="att-row"><span>full_name</span><span class="att-val">${data.name||''}</span></div>
       <div class="att-row"><span>attendance_date</span><span class="att-val">${data.date||''}</span></div>
       <div class="att-row"><span>entry_time</span><span class="att-val">${data.time||''}</span></div>
+      <div class="att-row"><span>latitude</span><span class="att-val">${data.latitude||'not captured'}</span></div>
+      <div class="att-row"><span>longitude</span><span class="att-val">${data.longitude||'not captured'}</span></div>
       <div class="att-row"><span>address</span><span class="att-val">${data.location||'not captured'}</span></div>
       <div class="att-row"><span>distance_from_centre</span><span class="att-val">${data.distanceFromCentre||'â€”'} m</span></div>
       <div class="att-row"><span>login_method</span><span class="att-val">${data.method||'biometric'}</span></div>
@@ -122,6 +124,8 @@ function showAttendanceCard(data, userId) {
     sessionStorage.setItem('ba_name',  data.name||'');
     sessionStorage.setItem('ba_date',  data.date||'');
     sessionStorage.setItem('ba_time',  data.time||'');
+    sessionStorage.setItem('ba_lat',   data.latitude||'');
+    sessionStorage.setItem('ba_lng',   data.longitude||'');
     sessionStorage.setItem('ba_loc',   data.location||'');
     sessionStorage.setItem('ba_meth',  data.method||'biometric');
     sessionStorage.setItem('ba_dist',  data.distanceFromCentre||'');
@@ -137,7 +141,7 @@ function restoreSignInForm() {
   const bb=document.getElementById('btn-bio-signin');if(bb){bb.style.display='';bb.disabled=false;}
   if(ef)ef.value='';
   markedUserId=null;
-  try{['ba_uid','ba_name','ba_date','ba_time','ba_loc','ba_meth','ba_dist'].forEach(k=>sessionStorage.removeItem(k));}catch(e){}
+  try{['ba_uid','ba_name','ba_date','ba_time','ba_lat','ba_lng','ba_loc','ba_meth','ba_dist'].forEach(k=>sessionStorage.removeItem(k));}catch(e){}
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -542,7 +546,6 @@ function resetRegisterFlow() {
   registerFlowState.step = 1;
   registerFlowState.accountCreated = false;
   clearRegisterErrors();
-  setRegisterBiometricVisible(false);
   setRegisterStep(1, { silent: true });
 }
 
@@ -714,24 +717,15 @@ async function handleBiometricSignIn() {
     }});
 
     signedInUser = info;
-    const roleValue = roleNameOf(info);
+    const roleValue = normalizeRoleKey(info.roleKey || info.roleId || '');
+    showLocBar('ok','Fingerprint / Face ID verified');
 
     if (isAdminRole(roleValue)) {
-      showLocBar('ok','Admin verified successfully');
-      applyRoleBasedUi(info, []);
       toast('âœ“ Admin signed in','success');
-    } else {
-      const deptCode = normalizeCode(info.deptId);
-      const deptLocations = (registerLookupState.locations || []).filter(loc =>
-        normalizeCode(loc.name || '').startsWith(deptCode)
-      );
-      if (!deptLocations.length) {
-        toast('No classroom or lab is configured for your department yet','error');
-        return;
-      }
-      showLocBar('ok',`${roleValue || 'User'} verified. Select your attendance location.`);
-      applyRoleBasedUi(info, deptLocations);
+      return;
     }
+
+    await submitStudentAttendance();
   }catch(e){
     if(e.name==='NotAllowedError')toast('Biometric cancelled','warn');
     else toast('Error: '+e.message,'error');
@@ -788,20 +782,18 @@ async function submitStudentAttendance() {
     toast('Sign in first','error');
     return;
   }
-  const locationId = document.getElementById('student-location-select')?.value;
-  if (!locationId) {
-    toast('Select your classroom or lab','error');
-    return;
-  }
-  const location = (registerLookupState.locations || []).find(l => String(l.attendance_location_id) === String(locationId));
   const btn = document.getElementById('btn-student-attendance');
   if (btn) setLoading('btn-student-attendance', true);
   try {
     showLocBar('getting','Getting your locationâ€¦');
     const loc = await getLocationWithAddress();
     if(loc.denied){ if (btn) setLoading('btn-student-attendance', false); return; }
-    if(loc.latitude)showLocBar('ok',loc.address||`${loc.latitude}, ${loc.longitude}`,loc.accuracy);
-    else showLocBar('fail','Location not captured â€” marked without GPS');
+    if(!loc.latitude || !loc.longitude){
+      showLocBar('fail','Location not captured â€” attendance blocked');
+      toast('GPS location is required to mark attendance','error');
+      return;
+    }
+    showLocBar('ok',loc.address||`${loc.latitude}, ${loc.longitude}`,loc.accuracy);
 
     const att = await api({
       action: 'markEntry',
@@ -809,12 +801,10 @@ async function submitStudentAttendance() {
       loginMethod: 'biometric',
       latitude: loc.latitude,
       longitude: loc.longitude,
-      address: location ? `${location.name}${loc.address ? ' Â· ' + loc.address : ''}` : loc.address,
-      attendanceLocationId: locationId
+      address: loc.address
     });
 
     if(att.success){
-      document.getElementById('student-att-panel').style.display='none';
       toast('âœ“ '+att.message,'success');
       showAttendanceCard({...att, method:'biometric'}, signedInUser.userId);
     } else if(att.code==='TOO_FAR'){
@@ -856,83 +846,32 @@ async function toggleMyAtt() {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// REGISTER â€” writes to Users + UserAttendanceLocationMap
+// REGISTER â€” biometric first, then account creation
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function handleRegister() {
-  const name   = document.getElementById('r-name').value.trim();
-  const email  = document.getElementById('r-email').value.trim();
-  const pass   = document.getElementById('r-password').value;
-  const confirmPass = document.getElementById('r-confirm-password').value;
-  const dob    = document.getElementById('r-dob').value;
-  const mobile = document.getElementById('r-mobile').value.trim();
-  const dept   = document.getElementById('r-dept').value.trim();
-  const role   = document.getElementById('r-role').value;
-  const inst   = String(window.TENANT?.institution?.name || tenantState.institution?.name || '').trim();
-  const orgType = String(window.TENANT?.orgType || tenantState.orgType || '').trim();
-
-  if(!name||!email||!dob||!mobile||!inst||!orgType||!dept||!role||!pass||!confirmPass){
-    toast('All registration fields are required','error');
-    return;
-  }
-  if(!isValidRegistrationName(name)){
-    toast('Enter a valid full name','error');
-    return;
-  }
-  if(!isValidRegistrationEmail(email)){
-    toast('Enter a valid email address','error');
-    return;
-  }
-  if(!isValidDob(dob)){
-    toast('Enter a valid date of birth','error');
-    return;
-  }
-  if(!isValidRegistrationMobile(mobile)){
-    toast('Enter a valid mobile number','error');
-    return;
-  }
-  if(!inst){ toast('Tenant organization is not loaded','error'); return; }
-  if(!isValidDepartmentValue(dept)){
-    toast('Enter a valid department','error');
-    return;
-  }
-  if(pass.length<8){
-    toast('Password must be at least 8 characters','error');
-    return;
-  }
-  if(!/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)){
-    toast('Password must include at least 1 letter and 1 number','error');
-    return;
-  }
-  if(pass !== confirmPass){
-    toast('Password and confirm password must match','error');
-    return;
-  }
-
-  setLoading('btn-register',true);
-  try{
-    const dId = await getDeviceId();
-    const d   = await api({
-      action:               'registerUser',
-      name, email, password:pass, dob, mobile,
-      departmentId:         dept,
-      roleId:               role,
-      instituteId:          inst,
-      orgType:              orgType,
-      deviceId:             dId
-    });
-    if(d.success){
-      registeredUid=d.userId;
-      toast('âœ“ Account created! Now register biometric.','success');
-      document.getElementById('btn-bio-reg').disabled=false;
-      document.getElementById('bio-hint').textContent='Tap below to register fingerprint / Face ID';
-      // Auto-bind device
-      await api({action:'registerDevice',userId:d.userId,deviceId:dId});
-    }else toast(d.message,'error');
-  }catch(e){toast('Error: '+e.message,'error');}
-  setLoading('btn-register',false);
+  return handleRegisterV2();
 }
 
-// â”€â”€ Biometric registration (writes biometric_code to Users) â”€â”€
+async function collectRegistrationBiometric(name, email) {
+  if (!window.PublicKeyCredential) {
+    throw new Error('WebAuthn not supported');
+  }
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge,
+    rp: { name: `BioAttend ${tenantState.institution?.name || ''}`.trim(), id: location.hostname },
+    user: {
+      id: crypto.getRandomValues(new Uint8Array(16)),
+      name: email,
+      displayName: name
+    },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+    timeout: 60000
+  }});
+  return btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+}
+
 async function handleRegisterV2() {
   clearRegisterErrors();
   refreshRegisterConditionalFields();
@@ -969,6 +908,7 @@ async function handleRegisterV2() {
   setLoading('btn-register',true);
   try{
     const dId = await getDeviceId();
+    const biometricCode = await collectRegistrationBiometric(name, email);
     const d   = await api({
       action:               'registerUser',
       name, email, password:pass, dob, mobile,
@@ -979,42 +919,25 @@ async function handleRegisterV2() {
       studentEmployeeId:    memberId,
       studyLevel:           studyLevel,
       designation:          designation,
+      biometricCode:        biometricCode,
       deviceId:             dId
     });
     if(d.success){
       registeredUid=d.userId;
       registerFlowState.accountCreated = true;
-      toast('Ã¢Å“â€œ Account created! Now register biometric.','success');
-      setRegisterBiometricVisible(true);
-      const bioHint = document.getElementById('bio-hint');
-      if (bioHint) bioHint.textContent='Tap below to register fingerprint or Face ID on this device.';
+      toast('âœ“ Account created with biometric access.','success');
       await api({action:'registerDevice',userId:d.userId,deviceId:dId});
     }else toast(d.message,'error');
-  }catch(e){toast('Error: '+e.message,'error');}
+  }catch(e){
+    if(e.name==='NotAllowedError') toast('Biometric cancelled','warn');
+    else toast('Error: '+e.message,'error');
+  }
   setLoading('btn-register',false);
 }
 
 async function handleBiometricRegister() {
-  if(!registeredUid){toast('Create account first','error');return;}
-  if(!window.PublicKeyCredential){toast('WebAuthn not supported','error');return;}
   try{
-    const challenge=crypto.getRandomValues(new Uint8Array(32));
-    const cred=await navigator.credentials.create({publicKey:{
-      challenge,
-      rp:{name:`BioAttend ${tenantState.institution?.name || ''}`.trim(),id:location.hostname},
-      user:{id:Uint8Array.from(registeredUid,c=>c.charCodeAt(0)),
-            name:document.getElementById('r-email').value,
-            displayName:document.getElementById('r-name').value},
-      pubKeyCredParams:[{type:'public-key',alg:-7}],
-      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
-      timeout:60000
-    }});
-    const credId=btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
-    const d=await api({action:'saveBiometric',userId:registeredUid,credentialId:credId});
-    if(d.success){
-      toast('âœ“ Biometric registered! Ready to sign in.','success');
-      document.getElementById('bio-hint').textContent='âœ“ Biometric saved â€” ready to use';
-    }else toast(d.message,'error');
+    toast('Biometric is now requested automatically before account creation.','info');
   }catch(e){toast('Biometric error: '+e.message,'error');}
 }
 

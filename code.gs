@@ -139,9 +139,13 @@ var TENANT_DIRECTORY = {
 };
 
 // ── GPS defaults ──────────────────────────────────────────────
-var DEFAULT_LAT = 13.32603;
-var DEFAULT_LNG = 77.12621;
-var DEFAULT_RADIUS = 200;
+var DEFAULT_LAT = 13.32609;
+var DEFAULT_LNG = 77.12623;
+var DEFAULT_RADIUS = 2000;
+var TENANT_GEOFENCE = {
+  '2': { latitude: 13.32609, longitude: 77.12623, radius: 2000, label: 'SIT' },
+  '3': { latitude: 13.32048, longitude: 77.09173, radius: 2000, label: 'SSIT' }
+};
 var AUTO_SESSION_WINDOW_MINUTES = 10;
 var AUTO_SESSION_SUBJECT = 'Automatic Attendance Session';
 var AUTH_SESSION_TTL_MINUTES = 480;
@@ -361,6 +365,17 @@ function extractSpreadsheetId(url) {
 
 function getTenantConfig(guid) {
   return TENANT_DIRECTORY[normalizeGuid(guid)] || null;
+}
+
+function getTenantGeofence(guid) {
+  var tenantGuid = normalizeGuid(guid);
+  var configured = TENANT_GEOFENCE[tenantGuid] || {};
+  return {
+    latitude: parseFloat(configured.latitude || DEFAULT_LAT),
+    longitude: parseFloat(configured.longitude || DEFAULT_LNG),
+    radius: Math.max(parseInt(configured.radius || DEFAULT_RADIUS, 10) || DEFAULT_RADIUS, DEFAULT_RADIUS),
+    label: String(configured.label || '')
+  };
 }
 
 function getWebAppUrl() {
@@ -798,14 +813,15 @@ function resolveUserTrackingLocation(userId) {
     }
   }
   var locId = userLocMap ? userLocMap.attendance_location_id : 1;
-  var allowedDist = userLocMap ? parseInt(userLocMap.allowed_distance || DEFAULT_RADIUS, 10) : DEFAULT_RADIUS;
-  var anchorLat = DEFAULT_LAT;
-  var anchorLng = DEFAULT_LNG;
+  var geofence = getTenantGeofence(currentGuid());
+  var allowedDist = userLocMap ? Math.max(parseInt(userLocMap.allowed_distance || 0, 10) || 0, geofence.radius) : geofence.radius;
+  var anchorLat = geofence.latitude;
+  var anchorLng = geofence.longitude;
   var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
   for (var j = 0; j < locRows.length; j++) {
     if (String(locRows[j].attendance_location_id) === String(locId)) {
-      anchorLat = parseFloat(locRows[j].latitude || DEFAULT_LAT);
-      anchorLng = parseFloat(locRows[j].longitude || DEFAULT_LNG);
+      anchorLat = parseFloat(locRows[j].latitude || geofence.latitude);
+      anchorLng = parseFloat(locRows[j].longitude || geofence.longitude);
       break;
     }
   }
@@ -931,6 +947,8 @@ function markEntry(b) {
     var lngCheck = (b.longitude === '' || typeof b.longitude === 'undefined') ? null : parseNumber(b.longitude);
     if ((latCheck !== null || lngCheck !== null) && !isValidCoordinate(latCheck, lngCheck))
       return { success: false, message: 'Invalid coordinates' };
+    if (latCheck === null || lngCheck === null)
+      return { success: false, code: 'LOCATION_REQUIRED', message: 'GPS location is required to mark attendance' };
 
     var now  = new Date();
     var t    = tz();
@@ -948,15 +966,16 @@ function markEntry(b) {
     for (var x = 0; x < userLocRows.length; x++) {
       if (String(userLocRows[x].user_id) === String(b.userId)) { userLocMap = userLocRows[x]; break; }
     }
-    var allowedDist = userLocMap ? parseInt(userLocMap.allowed_distance || DEFAULT_RADIUS) : DEFAULT_RADIUS;
+    var geofence = getTenantGeofence(currentGuid());
+    var allowedDist = userLocMap ? Math.max(parseInt(userLocMap.allowed_distance || 0, 10) || 0, geofence.radius) : geofence.radius;
     var locId       = userLocMap ? userLocMap.attendance_location_id : 1;
 
-    var anchorLat = DEFAULT_LAT, anchorLng = DEFAULT_LNG;
+    var anchorLat = geofence.latitude, anchorLng = geofence.longitude;
     var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
     for (var lx = 0; lx < locRows.length; lx++) {
       if (String(locRows[lx].attendance_location_id) === String(locId)) {
-        anchorLat = parseFloat(locRows[lx].latitude  || DEFAULT_LAT);
-        anchorLng = parseFloat(locRows[lx].longitude || DEFAULT_LNG);
+        anchorLat = parseFloat(locRows[lx].latitude  || geofence.latitude);
+        anchorLng = parseFloat(locRows[lx].longitude || geofence.longitude);
         break;
       }
     }
@@ -999,7 +1018,7 @@ function markEntry(b) {
         user.full_name,
         'entry',
         timeStr,
-        '',
+        toCleanText(b.biometricCode || '', 200),
         dateStr,
         b.loginMethod || 'biometric',
         lat !== null ? lat : '',
@@ -1037,6 +1056,8 @@ function markEntry(b) {
         message: '\u2713 Attendance marked at ' + timeStr,
         name: user.full_name, date: dateStr, time: timeStr,
         location: b.address || (lat ? lat + ', ' + lng : 'not captured'),
+        latitude: lat !== null ? lat : '',
+        longitude: lng !== null ? lng : '',
         distanceFromCentre: dist
       };
     } finally { lock.releaseLock(); }
@@ -1082,7 +1103,8 @@ function markExit(b) {
 
       var xlat  = latCheck !== null ? latCheck : '';
       var xlng  = lngCheck !== null ? lngCheck : '';
-      var xdist = (xlat !== '' && xlng !== '') ? haversine(xlat, xlng, DEFAULT_LAT, DEFAULT_LNG) : '';
+      var geofence = getTenantGeofence(currentGuid());
+      var xdist = (xlat !== '' && xlng !== '') ? haversine(xlat, xlng, geofence.latitude, geofence.longitude) : '';
 
       var lock = LockService.getScriptLock();
       lock.waitLock(6000);
@@ -1429,8 +1451,17 @@ function getBiometric(b) {
     var user = getUserByEmail(b.email);
     if (!user) return { success: false, message: 'No account found. Please register first.' };
     if (!user.biometric_code)
-      return { success: false, message: 'No biometric registered. Please register fingerprint first.' };
-    return { success: true, credentialId: user.biometric_code, userId: user.user_id, name: user.full_name };
+      return { success: false, message: 'No biometric registered. Please register fingerprint or Face ID first.' };
+    var role = normalizeRoleValue(user.role_id);
+    return {
+      success: true,
+      credentialId: user.biometric_code,
+      userId: user.user_id,
+      name: user.full_name,
+      roleId: role,
+      roleKey: role,
+      deptId: user.department_id
+    };
   } catch(err) { return { success: false, message: 'getBiometric: ' + err }; }
 }
 
@@ -1632,9 +1663,11 @@ function setupSheets() {
     // Attendance locations: 1, 2, 3
     var locSheet = getSheet(SH.ATT_LOCATIONS);
     if (locSheet.getLastRow() < 2) {
-      locSheet.appendRow([1, 'SIT Campus Main Block',    13.32603, 77.12621]);
-      locSheet.appendRow([2, 'SIT Campus CS Lab Block',  13.32620, 77.12650]);
-      locSheet.appendRow([3, 'SIT Campus Seminar Hall',  13.32580, 77.12600]);
+      var fence = getTenantGeofence(currentGuid());
+      var label = fence.label || 'Campus';
+      locSheet.appendRow([1, label + ' Campus Main Block', fence.latitude, fence.longitude]);
+      locSheet.appendRow([2, label + ' Campus CS Lab Block', fence.latitude + 0.00012, fence.longitude + 0.00012]);
+      locSheet.appendRow([3, label + ' Campus Seminar Hall', fence.latitude - 0.00012, fence.longitude - 0.00012]);
     }
 
     return { success: true, message: 'All sheets created and seeded with numeric IDs.', sheets: created };
@@ -1663,11 +1696,12 @@ function resetUsersSheet() {
 
 function debugInfo() {
   try {
+    var fence = getTenantGeofence(currentGuid());
     var sheets = ss().getSheets().map(function(s) {
       return { name: s.getName(), dataRows: Math.max(0, s.getLastRow()-1) };
     });
     return { success: true, spreadsheet: ss().getName(), sheets: sheets,
-             geofence: DEFAULT_RADIUS + 'm around (' + DEFAULT_LAT + ', ' + DEFAULT_LNG + ')' };
+             geofence: fence.radius + 'm around (' + fence.latitude + ', ' + fence.longitude + ')' };
   } catch(err) { return { success: false, message: 'debug: ' + err }; }
 }
 
