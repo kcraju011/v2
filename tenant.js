@@ -26,7 +26,7 @@ const FALLBACK_TENANTS = {
       name: 'Attendance monitoring',
       description: 'Multi-tenant biometric attendance monitoring'
     },
-    apiUrl: 'https://script.google.com/macros/s/AKfycbzR-z38NrPZZm--4OeStiRvAgMb6SpwCjtb_GW0Rl9-/dev'
+    apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
 
   '2': {
@@ -283,8 +283,6 @@ function applyTenantBranding(profile) {
   const tagEl = document.getElementById('org-tagline');
   const cityEl = document.getElementById('org-city-text');
   const teacherSubtitle = document.getElementById('teacher-dashboard-subtitle');
-  const orgInput = document.getElementById('r-institute');
-  const orgTypeEl = document.getElementById('r-org-type');
   const logoEl = document.getElementById('org-logo');
   const fallbackEl = document.getElementById('org-logo-fallback');
 
@@ -294,7 +292,18 @@ function applyTenantBranding(profile) {
   if (teacherSubtitle) teacherSubtitle.textContent = `Teacher Dashboard · ${orgName}`;
   
   if (logoEl && fallbackEl) {
+    logoEl.onload = () => {
+      logoEl.style.display = 'block';
+      fallbackEl.style.display = 'none';
+    };
+    logoEl.onerror = () => {
+      logoEl.removeAttribute('src');
+      logoEl.style.display = 'none';
+      fallbackEl.style.display = 'block';
+    };
     if (logo) {
+      logoEl.referrerPolicy = 'no-referrer';
+      logoEl.loading = 'eager';
       logoEl.src = logo;
       logoEl.style.display = 'block';
       fallbackEl.style.display = 'none';
