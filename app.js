@@ -90,6 +90,50 @@ function showLocBar(state,msg,accuracy){
   el.innerHTML=`<div class="loc-bar ${state}">${icons[state]||''} ${msg}${acc}</div>`;
 }
 
+function startTracking(userId) {
+  if (!userId) return;
+  stopTracking();
+  window._trackingUserId = String(userId);
+  window._exitCounter = 0;
+  try { sessionStorage.setItem('ba_tracking_user', String(userId)); } catch(e) {}
+  window._trackingInterval = setInterval(trackLocation, 30000);
+}
+
+function stopTracking() {
+  if (window._trackingInterval) {
+    clearInterval(window._trackingInterval);
+    window._trackingInterval = null;
+  }
+  window._trackingUserId = null;
+  window._exitCounter = 0;
+  try { sessionStorage.removeItem('ba_tracking_user'); } catch(e) {}
+}
+
+async function trackLocation() {
+  if (!window._trackingUserId) return;
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const payload = {
+      action: 'trackLocation',
+      user_id: window._trackingUserId,
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude
+    };
+    try {
+      const res = await api(payload);
+      if (res?.exitMarked) {
+        stopTracking();
+        toast('Auto exit recorded','success');
+        restoreSignInForm();
+      }
+    } catch (e) {
+      console.error('Tracking error', e);
+    }
+  }, (err) => {
+    console.error('Tracking GPS error', err);
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+}
+
 // â”€â”€ Attendance card (shown after marking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showAttendanceCard(data, userId) {
   markedUserId = userId;
@@ -130,9 +174,11 @@ function showAttendanceCard(data, userId) {
     sessionStorage.setItem('ba_meth',  data.method||'biometric');
     sessionStorage.setItem('ba_dist',  data.distanceFromCentre||'');
   }catch(e){}
+  startTracking(userId);
 }
 
 function restoreSignInForm() {
+  stopTracking();
   const card=document.getElementById('att-success-card');if(card)card.style.display='none';
   const lb=document.getElementById('loc-status-bar');if(lb)lb.innerHTML='';
   const ef=document.getElementById('si-email');
@@ -796,6 +842,7 @@ async function handleExit() {
           <div class="att-row"><span>duration</span><span class="att-val">${res.duration||res.durationMins+' min'||''}</span></div>
           <div class="att-row"><span>address (exit)</span><span class="att-val">${res.location||'not captured'}</span></div>`;
       }
+      stopTracking();
       if(btn){btn.disabled=true;btn.textContent='Exit recorded âœ“';btn.style.opacity='.5';}
       markedUserId=null;
       setTimeout(()=>restoreSignInForm(),4000);

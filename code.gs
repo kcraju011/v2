@@ -246,7 +246,8 @@ function route(b) {
     case 'markAttendance':        return markEntry(b);
     case 'markExit':              return markExit(b);
     case 'exitAttendance':        return markExit(b);
-    case 'trackStudentLocation':  return trackStudentLocation(b);
+    case 'trackLocation':         return trackLocation(b);
+    case 'trackStudentLocation':  return trackLocation(b);
     case 'getMyAttendance':       return getMyAttendance(b);
     case 'exportAttendance':      return exportAttendance(b);
 
@@ -828,6 +829,26 @@ function resolveUserTrackingLocation(userId) {
   return { attendanceLocationId: locId, allowedDistance: allowedDist, anchorLat: anchorLat, anchorLng: anchorLng };
 }
 
+function getAllowedDistance(userId) {
+  return resolveUserTrackingLocation(userId).allowedDistance;
+}
+
+function getAttendanceCenter(userId) {
+  var track = resolveUserTrackingLocation(userId);
+  return { lat: track.anchorLat, lng: track.anchorLng, attendanceLocationId: track.attendanceLocationId };
+}
+
+function saveLocation(userId, lat, lng, distance) {
+  var now = new Date();
+  var lmId = nextId(SH.LOC_MONITOR);   // â† integer
+  getSheet(SH.LOC_MONITOR).appendRow([lmId, userId, lat, lng, distance, now.toISOString()]);
+  return lmId;
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  return haversine(lat1, lon1, lat2, lon2);
+}
+
 // ============================================================
 //  1. REGISTER USER
 //  user_id → nextId(Users)          — integer
@@ -1141,6 +1162,51 @@ function markExit(b) {
 // ============================================================
 //  5. TRACK STUDENT LOCATION
 // ============================================================
+
+function trackLocation(b) {
+  try {
+    var userId = String(b.user_id || b.userId || '').trim();
+    if (!userId) return { success: false, message: 'userId required' };
+    var lat = parseFloat(b.latitude), lng = parseFloat(b.longitude);
+    if (isNaN(lat) || isNaN(lng)) return { success: false, message: 'invalid coordinates' };
+    if (!isValidCoordinate(lat, lng)) return { success: false, message: 'invalid coordinates' };
+    var user = getUserById(userId);
+    if (!user) return { success: false, message: 'User not found' };
+
+    var track = resolveUserTrackingLocation(userId);
+    var distance = calculateDistance(lat, lng, track.anchorLat, track.anchorLng);
+    saveLocation(userId, lat, lng, distance);
+
+    var cache = CacheService.getScriptCache();
+    var key = 'exit_counter_' + userId;
+    var limit = track.allowedDistance + 20;
+    var count = parseInt(cache.get(key) || '0', 10);
+    if (distance > limit) {
+      count++;
+      cache.put(key, String(count), 300);
+    } else {
+      count = 0;
+      cache.put(key, '0', 300);
+    }
+
+    var exitMarked = false;
+    if (count >= 3) {
+      var exitResult = markExit({
+        userId: userId,
+        latitude: lat,
+        longitude: lng,
+        address: b.address || ''
+      });
+      cache.remove(key);
+      exitMarked = !!(exitResult && exitResult.success);
+      if (!exitMarked && exitResult && /No entry record found/i.test(String(exitResult.message || ''))) {
+        exitMarked = true;
+      }
+    }
+
+    return { success: true, distance: distance, exitMarked: exitMarked };
+  } catch(err) { return { success: false, message: 'trackLocation: ' + err }; }
+}
 
 function trackStudentLocation(b) {
   try {
