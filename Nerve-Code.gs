@@ -21,7 +21,7 @@ var TENANT_HEADERS = [
 
 var DEFAULT_TENANTS = [
   {
-    guid: '1',
+    guid: '2',
     alias: 'SIT',
     institution_name: 'SIT',
     org_type: 'college',
@@ -36,7 +36,7 @@ var DEFAULT_TENANTS = [
     status: 'active'
   },
   {
-    guid: '2',
+    guid: '3',
     alias: 'SSIT',
     institution_name: 'SSIT',
     org_type: 'college',
@@ -200,6 +200,17 @@ function doPost(e) {
 }
 
 function setupNerveRegistry() {
-  ensureNerveRegistry();
+  var sheet = nerveSheet();
+  sheet.clearContents();
+  sheet.appendRow(TENANT_HEADERS);
+  sheet.setFrozenRows(1);
+  var values = DEFAULT_TENANTS.map(function(t) {
+    return [
+      t.guid, t.alias, t.institution_name, t.org_type, t.city, t.spreadsheet_url, t.api_url,
+      t.application_id, t.application_name, t.application_description, t.logo_url, t.website,
+      t.status, new Date().toISOString(), new Date().toISOString()
+    ];
+  });
+  sheet.getRange(2, 1, values.length, TENANT_HEADERS.length).setValues(values);
   return { success: true, message: 'Nerve tenants seeded' };
 }
