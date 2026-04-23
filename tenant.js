@@ -5,11 +5,11 @@ const NERVE_URL = 'https://script.google.com/macros/s/AKfycbwhFJ7oyLoed11sTYGikH
 
 const TENANT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const EXPECTED_TENANTS = {
-  '1': {
+  '2': {
     name: 'SIT',
     apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
-  '2': {
+  '3': {
     name: 'SSIT',
     apiUrl: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec'
   }
@@ -17,13 +17,13 @@ const EXPECTED_TENANTS = {
 
 
 // â”€â”€ FALLBACK TENANTS (OFFLINE MODE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const VALID_GUIDS = new Set(['1', '2']);
+const VALID_GUIDS = new Set(['2', '3']);
 
 const FALLBACK_TENANTS = {
 
-  '1': {
+  '2': {
     success: true,
-    guid: '1',
+    guid: '2',
     orgType: 'college',
     institution: {
       name: 'SIT',
@@ -40,9 +40,9 @@ const FALLBACK_TENANTS = {
     apiUrl: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec'
   },
 
-  '2': {
+  '3': {
     success: true,
-    guid: '2',
+    guid: '3',
     orgType: 'college',
     institution: {
       name: 'SSIT',
@@ -339,7 +339,7 @@ async function bootTenant() {
       const box = document.getElementById('tenant-loader');
       const label = document.getElementById('tenant-loader-text');
       if (label) label.textContent = 'Invalid tenant link';
-      if (box) box.innerHTML = '<strong>Invalid link</strong><span>Please use a valid tenant URL with q=1 or q=2.</span>';
+      if (box) box.innerHTML = '<strong>Invalid link</strong><span>Please use a valid tenant URL with q=2 or q=3.</span>';
       return;
     }
     const cachedProfile = readCachedTenant(guid);

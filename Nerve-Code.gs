@@ -21,14 +21,14 @@ var TENANT_HEADERS = [
 
 var DEFAULT_TENANTS = [
   {
-    guid: '1',
+    guid: '2',
     alias: 'SIT',
     institution_name: 'SIT',
     org_type: 'college',
     city: 'Tumakuru',
     spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1c5ZGKxr-ZNxbao6L6D87N8JNSvPNf2Il9Xnl8ha04f8/edit?gid=0#gid=0',
     api_url: 'https://script.google.com/macros/s/AKfycby7Sz7KutpgfdbqCY9AvYfUmBs9QKOWiydT0eKj4TDFhVSC6cOKzk5YU3yHcrGYzdcbNg/exec',
-    application_id: '101',
+    application_id: '102',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
     logo_url: 'https://web.sit.ac.in/wp-content/uploads/2025/03/SIT-Logo-1.png',
@@ -36,14 +36,14 @@ var DEFAULT_TENANTS = [
     status: 'active'
   },
   {
-    guid: '2',
+    guid: '3',
     alias: 'SSIT',
     institution_name: 'SSIT',
     org_type: 'college',
     city: 'Tumakuru',
     spreadsheet_url: 'https://docs.google.com/spreadsheets/d/1yGS6eyC6NTqwu6dllTYALe_Sc_0hn4_furgU-Wq6bH4/edit?gid=0#gid=0',
     api_url: 'https://script.google.com/macros/s/AKfycbxVNcVsed50bZixWuAaC_CFRusRzbIvG5DyPa3ZEf2O0X4IFQoNRDYf-BWutrKYYTa7/exec',
-    application_id: '102',
+    application_id: '103',
     application_name: 'Attendance monitoring',
     application_description: 'Biometric attendance for students, teachers and employees',
     logo_url: 'https://ssit.edu.in/img/ssit-logo.png',
