@@ -8,6 +8,7 @@
   if (tab === 'register') {
     resetRegisterFlow();
     loadRegisterLookups();
+    applyTenantToRegistration();
   }
 }
 
@@ -367,6 +368,51 @@ function refreshRegisterConditionalFields() {
   }
 }
 
+function applyTenantToRegistration() {
+  const tenant = (window.TENANT || tenantState.institution) ? {
+    institution: window.TENANT?.institution || tenantState.institution || {},
+    orgType: window.TENANT?.orgType || tenantState.orgType || ''
+  } : null;
+  if (!tenant) return false;
+
+  const orgNameInput = document.getElementById('r-institute');
+  const orgTypeSelect = document.getElementById('r-org-type');
+  const orgLabel = document.getElementById('r-org-name-label');
+  const orgTypeLabel = document.querySelector('label[for="r-org-type"]');
+  const orgName = String(tenant.institution?.name || '').trim();
+  const orgType = String(tenant.orgType || tenant.institution?.orgType || 'college').toLowerCase();
+  const orgTypeLabelText = orgType ? orgType.charAt(0).toUpperCase() + orgType.slice(1) : 'College';
+  const city = String(tenant.institution?.city || '').trim();
+
+  if (orgNameInput) {
+    orgNameInput.value = orgName;
+    orgNameInput.readOnly = true;
+    orgNameInput.setAttribute('readonly', 'readonly');
+    orgNameInput.setAttribute('aria-readonly', 'true');
+  }
+
+  if (orgTypeSelect) {
+    orgTypeSelect.value = orgType || 'college';
+    orgTypeSelect.disabled = true;
+    orgTypeSelect.setAttribute('disabled', 'disabled');
+  }
+
+  if (orgLabel) {
+    orgLabel.innerHTML = `Organization: ${orgName || 'Tenant'}${city ? ` (${city})` : ''}`;
+  }
+
+  if (orgTypeLabel) {
+    orgTypeLabel.textContent = `Type: ${orgTypeLabelText}`;
+  }
+
+  const step2Title = document.getElementById('register-step-2-title');
+  if (step2Title) {
+    step2Title.textContent = `${orgName || 'Tenant'} · ${orgTypeLabelText}`;
+  }
+
+  return true;
+}
+
 function updateRegisterFormByRole() {
   const roleEl = document.getElementById('r-role');
   const orgTypeEl = document.getElementById('r-org-type');
@@ -374,7 +420,6 @@ function updateRegisterFormByRole() {
   const orgLabel = document.getElementById('r-org-name-label');
   if (!roleEl || !orgTypeEl || !orgInput || !orgLabel) return;
 
-  const orgType = String(orgTypeEl.value || tenantState.orgType || '').toLowerCase();
   const selectedRole = String(roleEl.value || '');
   const roleOptions = getTenantRoleOptions();
   const finalRoleOptions = roleOptions.length ? roleOptions : COLLEGE_ROLE_OPTIONS;
@@ -382,8 +427,7 @@ function updateRegisterFormByRole() {
   renderRoleOptions(finalRoleOptions, getRolePlaceholder());
   if (finalRoleOptions.some(opt => String(opt.value) === selectedRole)) roleEl.value = selectedRole;
 
-  orgLabel.innerHTML = 'Organization Name <span class="req">*</span>';
-  orgInput.placeholder = orgType === 'university' ? 'University name' : (orgType === 'institute' ? 'Institute name' : 'College name');
+  applyTenantToRegistration();
   refreshRegisterConditionalFields();
 }
 
@@ -566,16 +610,16 @@ function validateRegisterStep(step) {
   }
 
   if (current === 2) {
-    const orgType = getRegisterValue('r-org-type');
-    const inst = getRegisterValue('r-institute');
     const role = getRegisterValue('r-role');
     const dept = getRegisterValue('r-dept');
     const roleKey = getRegisterRoleKey();
     const studyLevel = getRegisterValue('r-study-level');
     const designation = getRegisterValue('r-designation');
+    const tenantOrgName = String(window.TENANT?.institution?.name || tenantState.institution?.name || '').trim();
+    const tenantOrgType = String(window.TENANT?.orgType || tenantState.orgType || '').trim();
 
-    if (!inst) { setFieldState('field-r-institute', 'Organization name is required.'); valid = false; } else if (!isValidOrganizationName(inst)) { setFieldState('field-r-institute', 'Enter a valid organization name.'); valid = false; } else setFieldState('field-r-institute', '');
-    if (!orgType) { setFieldState('field-r-org-type', 'Select an organization type.'); valid = false; } else setFieldState('field-r-org-type', '');
+    if (!tenantOrgName) { setFieldState('field-r-institute', 'Tenant organization is not loaded.'); valid = false; } else setFieldState('field-r-institute', '');
+    if (!tenantOrgType) { setFieldState('field-r-org-type', 'Tenant organization type is not loaded.'); valid = false; } else setFieldState('field-r-org-type', '');
     if (!role) { setFieldState('field-r-role', 'Select a role.'); valid = false; } else setFieldState('field-r-role', '');
     if (!dept) { setFieldState('field-r-dept', 'Department is required.'); valid = false; } else if (!isValidDepartmentValue(dept)) { setFieldState('field-r-dept', 'Enter a valid department.'); valid = false; } else setFieldState('field-r-dept', '');
 
@@ -823,8 +867,8 @@ async function handleRegister() {
   const mobile = document.getElementById('r-mobile').value.trim();
   const dept   = document.getElementById('r-dept').value.trim();
   const role   = document.getElementById('r-role').value;
-  const inst   = document.getElementById('r-institute').value.trim();
-  const orgType = document.getElementById('r-org-type').value;
+  const inst   = String(window.TENANT?.institution?.name || tenantState.institution?.name || '').trim();
+  const orgType = String(window.TENANT?.orgType || tenantState.orgType || '').trim();
 
   if(!name||!email||!dob||!mobile||!inst||!orgType||!dept||!role||!pass||!confirmPass){
     toast('All registration fields are required','error');
@@ -846,10 +890,7 @@ async function handleRegister() {
     toast('Enter a valid mobile number','error');
     return;
   }
-  if(!isValidOrganizationName(inst)){
-    toast('Enter a valid organization name','error');
-    return;
-  }
+  if(!inst){ toast('Tenant organization is not loaded','error'); return; }
   if(!isValidDepartmentValue(dept)){
     toast('Enter a valid department','error');
     return;
@@ -919,8 +960,8 @@ async function handleRegisterV2() {
   const mobile = getRegisterValue('r-mobile');
   const dept   = getRegisterValue('r-dept');
   const role   = document.getElementById('r-role').value;
-  const inst   = getRegisterValue('r-institute');
-  const orgType = document.getElementById('r-org-type').value;
+  const inst   = String(window.TENANT?.institution?.name || tenantState.institution?.name || '').trim();
+  const orgType = String(window.TENANT?.orgType || tenantState.orgType || '').trim();
   const memberId = getRegisterValue('r-employee-id');
   const studyLevel = document.getElementById('r-study-level').value;
   const designation = getRegisterValue('r-designation');
@@ -1331,5 +1372,8 @@ try{
   const savedTeacher = localStorage.getItem('ba_teacher_session');
   if (savedTeacher) teacherData = JSON.parse(savedTeacher);
 }catch(e){}
-bootTenant();
+(async () => {
+  const ok = await bootTenant();
+  if (ok !== false) applyTenantToRegistration();
+})();
 

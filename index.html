@@ -144,12 +144,12 @@
             <div class="row2">
               <div class="field" id="field-r-institute">
                 <label id="r-org-name-label" for="r-institute">Organization Name <span class="req">*</span></label>
-                <input type="text" id="r-institute" value="" placeholder="Enter organization name" maxlength="120" required aria-describedby="err-r-institute"/>
+<input type="text" id="r-institute" value="" placeholder="Loading organization..." maxlength="120" readonly required aria-describedby="err-r-institute"/>
                 <div class="field-error" id="err-r-institute" role="alert"></div>
               </div>
               <div class="field" id="field-r-org-type">
                 <label for="r-org-type">Org Type <span class="req">*</span></label>
-                <select id="r-org-type" required onchange="updateRegisterFormByRole()" aria-describedby="err-r-org-type">
+<select id="r-org-type" required disabled onchange="updateRegisterFormByRole()" aria-describedby="err-r-org-type">
                   <option value="">Select...</option>
                   <option value="college">College</option>
                   <option value="university">University</option>
