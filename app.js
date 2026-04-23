@@ -91,47 +91,53 @@ function showLocBar(state,msg,accuracy){
 }
 
 function startTracking(userId) {
-  if (!userId) return;
+  if (!userId || !navigator.geolocation) return;
   stopTracking();
   window._trackingUserId = String(userId);
-  window._exitCounter = 0;
+  window._trackingLastSentAt = 0;
   try { sessionStorage.setItem('ba_tracking_user', String(userId)); } catch(e) {}
-  window._trackingInterval = setInterval(trackLocation, 30000);
+  window._trackingWatchId = navigator.geolocation.watchPosition(
+    pos => trackLocation(pos),
+    err => console.error('Tracking GPS error', err),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
 }
 
 function stopTracking() {
+  if (window._trackingWatchId != null) {
+    try { navigator.geolocation.clearWatch(window._trackingWatchId); } catch(e) {}
+    window._trackingWatchId = null;
+  }
   if (window._trackingInterval) {
     clearInterval(window._trackingInterval);
     window._trackingInterval = null;
   }
   window._trackingUserId = null;
-  window._exitCounter = 0;
+  window._trackingLastSentAt = 0;
   try { sessionStorage.removeItem('ba_tracking_user'); } catch(e) {}
 }
 
-async function trackLocation() {
-  if (!window._trackingUserId) return;
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const payload = {
-      action: 'trackLocation',
-      user_id: window._trackingUserId,
-      latitude: pos.coords.latitude,
-      longitude: pos.coords.longitude
-    };
-    try {
-      const res = await api(payload);
-      if (res?.exitMarked) {
-        stopTracking();
-        toast('Auto exit recorded','success');
-        restoreSignInForm();
-      }
-    } catch (e) {
-      console.error('Tracking error', e);
+async function trackLocation(pos) {
+  if (!window._trackingUserId || !pos?.coords) return;
+  const now = Date.now();
+  if (window._trackingLastSentAt && (now - window._trackingLastSentAt) < 30000) return;
+  window._trackingLastSentAt = now;
+  const payload = {
+    action: 'trackLocation',
+    user_id: window._trackingUserId,
+    latitude: pos.coords.latitude,
+    longitude: pos.coords.longitude
+  };
+  try {
+    const res = await api(payload);
+    if (res?.exitMarked) {
+      stopTracking();
+      toast('Auto exit recorded','success');
+      restoreSignInForm();
     }
-  }, (err) => {
-    console.error('Tracking GPS error', err);
-  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+  } catch (e) {
+    console.error('Tracking error', e);
+  }
 }
 
 // â”€â”€ Attendance card (shown after marking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -44,7 +44,7 @@ var HEADERS = {
     'attendance_id', 'user_id', 'full_name', 'type_attendance',
     'entry_time', 'exit_time', 'attendance_date', 'login_method',
     'latitude', 'longitude', 'attendance_location_id',
-    'address', 'distance_from_centre'
+    'address', 'distance_from_centre', 'status'
   ],
   LocationMonitor: [
     'location_monitor_id', 'user_id', 'latitude', 'longitude',
@@ -75,7 +75,7 @@ var HEADERS = {
     'details', 'ip_hint', 'created_at'
   ],
   AttendanceWindows: [
-    'window_id', 'name', 'start_time', 'duration_minutes', 'status'
+    'window_id', 'name', 'start_time', 'duration_minutes', 'status', 'location_id'
   ]
 };
 
@@ -849,6 +849,79 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return haversine(lat1, lon1, lat2, lon2);
 }
 
+function getAttendanceWindowRows() {
+  return getRows(getSheet(SH.ATT_WINDOWS));
+}
+
+function parseWindowEndTime(windowRow) {
+  var explicitEnd = String(windowRow.end_time || windowRow.endTime || '').trim();
+  if (explicitEnd) return explicitEnd;
+  var start = String(windowRow.start_time || '').trim();
+  var durationMins = parseInt(windowRow.duration_minutes || windowRow.durationMinutes || 0, 10);
+  if (!start || isNaN(durationMins)) return '';
+  var parts = start.split(':');
+  if (parts.length !== 2) return '';
+  var h = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return '';
+  var dt = new Date();
+  dt.setHours(h, m + durationMins, 0, 0);
+  return Utilities.formatDate(dt, tz(), 'HH:mm:ss');
+}
+
+function validateSession(userId, locationId) {
+  try {
+    var now = new Date();
+    var today = Utilities.formatDate(now, tz(), 'yyyy-MM-dd');
+    var windows = getAttendanceWindowRows().filter(function(w) {
+      return String(w.status || '').toLowerCase() === 'active';
+    });
+    if (!windows.length) {
+      return { success: false, code: 'NO_WINDOW', message: 'No attendance window configured' };
+    }
+
+    var locId = String(locationId || '').trim();
+    var scopedWindows = windows.filter(function(w) {
+      var windowLoc = String(w.location_id || '').trim();
+      return !windowLoc || !locId || windowLoc === locId;
+    });
+    if (!scopedWindows.length) scopedWindows = windows;
+    var matched = null;
+    for (var i = 0; i < scopedWindows.length; i++) {
+      var w = scopedWindows[i];
+      var startTime = String(w.start_time || '').trim();
+      var endTime = parseWindowEndTime(w);
+      if (!startTime || !endTime) continue;
+      var startDt = new Date(today + 'T' + startTime);
+      var endDt = new Date(today + 'T' + endTime);
+      if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) continue;
+      if (now >= startDt && now <= endDt) {
+        matched = {
+          sessionId: String(w.session_id || w.window_id || w.name || ''),
+          startTime: startTime,
+          endTime: endTime,
+          locationId: windowLoc || locId || ''
+        };
+        break;
+      }
+    }
+
+    if (!matched) {
+      return { success: false, code: 'SESSION_INVALID', message: 'Attendance is outside the allowed session window' };
+    }
+    return { success: true, window: matched };
+  } catch (err) {
+    return { success: false, code: 'SESSION_ERROR', message: 'validateSession: ' + err };
+  }
+}
+
+function attendanceReadColumnCount(sheet) {
+  var count = sheet.getLastColumn();
+  if (count < 13) count = 13;
+  if (count > 14) count = 14;
+  return count;
+}
+
 // ============================================================
 //  1. REGISTER USER
 //  user_id → nextId(Users)          — integer
@@ -990,6 +1063,8 @@ function markEntry(b) {
     var geofence = getTenantGeofence(currentGuid());
     var allowedDist = userLocMap ? Math.max(parseInt(userLocMap.allowed_distance || 0, 10) || 0, geofence.radius) : geofence.radius;
     var locId       = userLocMap ? userLocMap.attendance_location_id : 1;
+    var sessionCheck = validateSession(b.userId, locId);
+    if (!sessionCheck.success) return sessionCheck;
 
     var anchorLat = geofence.latitude, anchorLng = geofence.longitude;
     var locRows = getCached(SH.ATT_LOCATIONS, TTL_LOOKUP);
@@ -1015,13 +1090,14 @@ function markEntry(b) {
     var lastRow  = attSheet.getLastRow();
     var dateStr  = Utilities.formatDate(now, t, 'yyyy-MM-dd');
     if (lastRow >= 2) {
-      var uids  = attSheet.getRange(2, 2, lastRow - 1, 1).getValues();
-      var dates = attSheet.getRange(2, 7, lastRow - 1, 1).getValues();
-      var types = attSheet.getRange(2, 4, lastRow - 1, 1).getValues();
-      for (var j = 0; j < uids.length; j++) {
-        if (String(uids[j][0]).trim() === String(b.userId).trim() &&
-            normDate(dates[j][0], t) === dateStr &&
-            String(types[j][0]).trim() === 'entry') {
+      var cols = attendanceReadColumnCount(attSheet);
+      var rows = attSheet.getRange(2, 1, lastRow - 1, cols).getValues();
+      for (var j = 0; j < rows.length; j++) {
+        var row = rows[j];
+        var rowStatus = String(row[13] || '').trim().toUpperCase();
+        if (String(row[1]).trim() === String(b.userId).trim() &&
+            normDate(row[6], t) === dateStr &&
+            (String(row[3]).trim() === 'entry' || rowStatus === 'IN')) {
           return { success: false, message: 'Attendance already marked for today.' };
         }
       }
@@ -1039,14 +1115,15 @@ function markEntry(b) {
         user.full_name,
         'entry',
         timeStr,
-        toCleanText(b.biometricCode || '', 200),
+        '',
         dateStr,
         b.loginMethod || 'biometric',
         lat !== null ? lat : '',
         lng !== null ? lng : '',
         locId,
         b.address || '',
-        dist || ''
+        dist || '',
+        'IN'
       ]);
 
       if (lat !== null) {
@@ -1079,7 +1156,8 @@ function markEntry(b) {
         location: b.address || (lat ? lat + ', ' + lng : 'not captured'),
         latitude: lat !== null ? lat : '',
         longitude: lng !== null ? lng : '',
-        distanceFromCentre: dist
+        distanceFromCentre: dist,
+        sessionId: sessionCheck.window.sessionId || ''
       };
     } finally { lock.releaseLock(); }
   } catch(err) { return { success: false, message: 'markEntry: ' + err }; }
@@ -1105,13 +1183,13 @@ function markExit(b) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return { success: false, message: 'No attendance records found' };
 
-    var data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    var data = sheet.getRange(2, 1, lastRow - 1, attendanceReadColumnCount(sheet)).getValues();
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       if (String(row[1]).trim() !== String(b.userId).trim()) continue;
       if (normDate(row[6], t) !== dateStr) continue;
       if (String(row[3]).trim() !== 'entry') continue;
-      if (String(row[5]).trim()) continue;
+      if (String(row[5]).trim() || String(row[13] || '').trim().toUpperCase() === 'OUT') continue;
 
       var entryTimeStr = String(row[4] || '');
       var durationMins = '';
@@ -1133,6 +1211,7 @@ function markExit(b) {
         var sheetRow = i + 2;
         sheet.getRange(sheetRow, 4, 1, 1).setValue('exit');
         sheet.getRange(sheetRow, 6, 1, 1).setValue(timeStr);
+        sheet.getRange(sheetRow, 14, 1, 1).setValue('OUT');
         if (xlat !== '') {
           sheet.getRange(sheetRow, 9, 1, 5).setValues([[xlat, xlng, '', b.address || '', xdist]]);
         }
@@ -1175,18 +1254,50 @@ function trackLocation(b) {
 
     var track = resolveUserTrackingLocation(userId);
     var distance = calculateDistance(lat, lng, track.anchorLat, track.anchorLng);
-    saveLocation(userId, lat, lng, distance);
-
     var cache = CacheService.getScriptCache();
-    var key = 'exit_counter_' + userId;
+    var now = new Date();
+    var lastTrackTs = parseInt(cache.get('track_last_ts_' + userId) || '0', 10);
+    var lastTrackLat = parseFloat(cache.get('track_last_lat_' + userId) || '');
+    var lastTrackLng = parseFloat(cache.get('track_last_lng_' + userId) || '');
+    if (lastTrackTs && !isNaN(lastTrackLat) && !isNaN(lastTrackLng)) {
+      var elapsedMs = now.getTime() - lastTrackTs;
+      var movement = calculateDistance(lat, lng, lastTrackLat, lastTrackLng);
+      if (elapsedMs > 0 && elapsedMs < 10000 && movement > 500) {
+        appendAuditLog('gps_spoofing_suspected', userId, normalizeRoleValue(user.role_id), userId, {
+          movement: movement,
+          elapsedMs: elapsedMs,
+          latitude: lat,
+          longitude: lng
+        });
+      }
+    }
+    cache.put('track_last_ts_' + userId, String(now.getTime()), 300);
+    cache.put('track_last_lat_' + userId, String(lat), 300);
+    cache.put('track_last_lng_' + userId, String(lng), 300);
+
+    var lastPersistTs = parseInt(cache.get('track_persist_ts_' + userId) || '0', 10);
+    var lastPersistLat = parseFloat(cache.get('track_persist_lat_' + userId) || '');
+    var lastPersistLng = parseFloat(cache.get('track_persist_lng_' + userId) || '');
+    var shouldPersist = !lastPersistTs || (now.getTime() - lastPersistTs) >= 120000;
+    if (!shouldPersist && !isNaN(lastPersistLat) && !isNaN(lastPersistLng)) {
+      shouldPersist = calculateDistance(lat, lng, lastPersistLat, lastPersistLng) > 10;
+    }
+    if (shouldPersist) {
+      saveLocation(userId, lat, lng, distance);
+      cache.put('track_persist_ts_' + userId, String(now.getTime()), 300);
+      cache.put('track_persist_lat_' + userId, String(lat), 300);
+      cache.put('track_persist_lng_' + userId, String(lng), 300);
+    }
+
+    var cacheKey = 'exit_counter_' + userId;
     var limit = track.allowedDistance + 20;
-    var count = parseInt(cache.get(key) || '0', 10);
+    var count = parseInt(cache.get(cacheKey) || '0', 10);
     if (distance > limit) {
       count++;
-      cache.put(key, String(count), 300);
+      cache.put(cacheKey, String(count), 300);
     } else {
       count = 0;
-      cache.put(key, '0', 300);
+      cache.put(cacheKey, '0', 300);
     }
 
     var exitMarked = false;
@@ -1197,7 +1308,10 @@ function trackLocation(b) {
         longitude: lng,
         address: b.address || ''
       });
-      cache.remove(key);
+      cache.remove(cacheKey);
+      cache.remove('track_persist_ts_' + userId);
+      cache.remove('track_persist_lat_' + userId);
+      cache.remove('track_persist_lng_' + userId);
       exitMarked = !!(exitResult && exitResult.success);
       if (!exitMarked && exitResult && /No entry record found/i.test(String(exitResult.message || ''))) {
         exitMarked = true;
@@ -1235,13 +1349,14 @@ function getMyAttendance(b) {
     if (!b.userId) return { success: false, message: 'userId required' };
     var t = tz(), sheet = getSheet(SH.ATTENDANCE), lastRow = sheet.getLastRow();
     if (lastRow < 2) return { success: true, records: [] };
-    var data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    var data = sheet.getRange(2, 1, lastRow - 1, attendanceReadColumnCount(sheet)).getValues();
     var entryMap = {}, exitMap = {};
     data.forEach(function(row) {
       if (String(row[1]).trim() !== String(b.userId).trim()) return;
       var date = normDate(row[6], t);
-      if (String(row[3]).trim() === 'entry') entryMap[date] = row;
-      if (String(row[3]).trim() === 'exit')  exitMap[date]  = row;
+      var status = String(row[13] || '').trim().toUpperCase();
+      if (String(row[3]).trim() === 'entry' || status === 'IN') entryMap[date] = row;
+      if (String(row[3]).trim() === 'exit' || status === 'OUT')  exitMap[date]  = row;
     });
     var records = Object.keys(entryMap).map(function(date) {
       var e = entryMap[date], x = exitMap[date] || null;
@@ -1257,7 +1372,7 @@ function getMyAttendance(b) {
       }
       return { date: date, entryTime: e[4]||'', exitTime: x ? x[5]:'',
                duration: eDur, loginMethod: e[7]||'', address: e[11]||'',
-               distanceFromCentre: e[12]||'' };
+               distanceFromCentre: e[12]||'', status: (x ? 'OUT' : 'IN') };
     });
     records.sort(function(a, b) { return b.date.localeCompare(a.date); });
     return { success: true, records: records };
@@ -1434,12 +1549,13 @@ function getDashboard(b) {
     var userMap = buildMap(students, 'user_id');
     var attSheet = getSheet(SH.ATTENDANCE), attLast = attSheet.getLastRow(), presentMap = {};
     if (attLast >= 2) {
-      var rows = attSheet.getRange(2, 1, attLast-1, 13).getValues();
+      var rows = attSheet.getRange(2, 1, attLast-1, attendanceReadColumnCount(attSheet)).getValues();
       rows.forEach(function(row) {
-        if (String(row[3]).trim() !== 'entry') return;
+        var rowStatus = String(row[13] || '').trim().toUpperCase();
+        if (String(row[3]).trim() !== 'entry' && rowStatus !== 'IN') return;
         if (normDate(row[6], t) !== today) return;
         presentMap[String(row[1]).trim()] = { entryTime: row[4]||'', exitTime: row[5]||'',
-          method: row[7]||'', address: row[11]||'', distance: row[12]||'' };
+          method: row[7]||'', address: row[11]||'', distance: row[12]||'', status: rowStatus || 'IN' };
       });
     }
     var present = [], absent = [];
@@ -1494,10 +1610,10 @@ function exportAttendance(b) {
     if (!auth.ok) return auth.error;
     var t = tz(), sheet = getSheet(SH.ATTENDANCE), lastRow = sheet.getLastRow();
     if (lastRow < 2) return { success: true, csv: '', rowCount: 0 };
-    var data = sheet.getRange(2, 1, lastRow-1, 13).getValues();
+    var data = sheet.getRange(2, 1, lastRow-1, attendanceReadColumnCount(sheet)).getValues();
     var header = ['attendance_id','user_id','full_name','type_attendance','entry_time','exit_time',
                   'attendance_date','login_method','latitude','longitude','attendance_location_id',
-                  'address','distance_from_centre'];
+                  'address','distance_from_centre','status'];
     var lines = [header.join(',')];
     data.forEach(function(row) {
       if (b.userId && String(row[1]).trim() !== String(b.userId).trim()) return;
@@ -1720,10 +1836,10 @@ function setupSheets() {
 
     // Attendance windows: numeric ids
     ensureExactRows('AttendanceWindows', [
-      [1, 'Morning 1',   '09:00', 10, 'active'],
-      [2, 'Morning 2',   '10:30', 10, 'active'],
-      [3, 'Afternoon 1', '14:00', 10, 'active'],
-      [4, 'Afternoon 2', '15:30', 10, 'active']
+      [1, 'Morning 1',   '09:00', 10, 'active', 1],
+      [2, 'Morning 2',   '10:30', 10, 'active', 1],
+      [3, 'Afternoon 1', '14:00', 10, 'active', 1],
+      [4, 'Afternoon 2', '15:30', 10, 'active', 1]
     ]);
 
     // Attendance locations: 1, 2, 3
