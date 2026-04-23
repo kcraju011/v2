@@ -139,7 +139,9 @@ function restoreSignInForm() {
   if(ef&&ef.closest('.field'))ef.closest('.field').style.display='';
   const ib=document.querySelector('#pane-signin .info-box');if(ib)ib.style.display='';
   const bb=document.getElementById('btn-bio-signin');if(bb){bb.style.display='';bb.disabled=false;}
+  const pb=document.getElementById('btn-pass-signin');if(pb){pb.style.display='';pb.disabled=false;}
   if(ef)ef.value='';
+  const pw=document.getElementById('si-password');if(pw)pw.value='';
   markedUserId=null;
   try{['ba_uid','ba_name','ba_date','ba_time','ba_lat','ba_lng','ba_loc','ba_meth','ba_dist'].forEach(k=>sessionStorage.removeItem(k));}catch(e){}
 }
@@ -704,11 +706,9 @@ async function handleBiometricSignIn() {
   const btn=document.getElementById('btn-bio-signin');
   if(btn){btn._h=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Verifyingâ€¦';btn.disabled=true;}
   try{
-    // 1. Fetch biometric_code from Users table
     const info = await api({action:'getBiometric', email});
     if(!info.success||!info.credentialId){toast(info.message||'No biometric registered','error');return;}
 
-    // 2. WebAuthn â€” prompts device fingerprint/FaceID
     const challenge = crypto.getRandomValues(new Uint8Array(32));
     const rawId = Uint8Array.from(atob(info.credentialId), c=>c.charCodeAt(0));
     await navigator.credentials.get({publicKey:{
@@ -725,12 +725,41 @@ async function handleBiometricSignIn() {
       return;
     }
 
-    await submitStudentAttendance();
+    await submitStudentAttendance('biometric');
   }catch(e){
     if(e.name==='NotAllowedError')toast('Biometric cancelled','warn');
     else toast('Error: '+e.message,'error');
+  }finally{
+    if(btn){btn.innerHTML=btn._h||btn.innerHTML;btn.disabled=false;}
   }
-  if(btn){btn.innerHTML=btn._h||btn.innerHTML;btn.disabled=false;}
+}
+
+async function handlePasswordSignIn() {
+  const email = document.getElementById('si-email').value.trim();
+  const password = document.getElementById('si-password').value;
+  if(!email || !password){toast('Enter email and password first','error');return;}
+
+  const btn = document.getElementById('btn-pass-signin');
+  if(btn){btn._h=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Verifyingâ€¦';btn.disabled=true;}
+  try{
+    const info = await api({action:'loginUser', email, password});
+    if(!info.success){toast(info.message||'Invalid credentials','error');return;}
+
+    signedInUser = info;
+    const roleValue = normalizeRoleKey(info.roleKey || info.roleId || '');
+    showLocBar('ok','Password verified');
+
+    if (isAdminRole(roleValue)) {
+      toast('âœ“ Admin signed in','success');
+      return;
+    }
+
+    await submitStudentAttendance('password');
+  }catch(e){
+    toast('Error: '+e.message,'error');
+  }finally{
+    if(btn){btn.innerHTML=btn._h||btn.innerHTML;btn.disabled=false;}
+  }
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -777,7 +806,7 @@ async function handleExit() {
   }catch(e){toast('Error: '+e.message,'error');if(btn){btn.disabled=false;btn.textContent='Mark Exit (leaving classroom)';}}
 }
 
-async function submitStudentAttendance() {
+async function submitStudentAttendance(loginMethod = 'biometric') {
   if (!signedInUser || !signedInUser.userId) {
     toast('Sign in first','error');
     return;
@@ -791,6 +820,7 @@ async function submitStudentAttendance() {
     if(!loc.latitude || !loc.longitude){
       showLocBar('fail','Location not captured â€” attendance blocked');
       toast('GPS location is required to mark attendance','error');
+      if (btn) setLoading('btn-student-attendance', false);
       return;
     }
     showLocBar('ok',loc.address||`${loc.latitude}, ${loc.longitude}`,loc.accuracy);
@@ -798,7 +828,7 @@ async function submitStudentAttendance() {
     const att = await api({
       action: 'markEntry',
       userId: signedInUser.userId,
-      loginMethod: 'biometric',
+      loginMethod,
       latitude: loc.latitude,
       longitude: loc.longitude,
       address: loc.address
@@ -806,7 +836,7 @@ async function submitStudentAttendance() {
 
     if(att.success){
       toast('âœ“ '+att.message,'success');
-      showAttendanceCard({...att, method:'biometric'}, signedInUser.userId);
+      showAttendanceCard({...att, method: loginMethod}, signedInUser.userId);
     } else if(att.code==='TOO_FAR'){
       showLocBar('fail',`${att.distance}m from location â€” must be within ${att.allowed}m`);
       toast(`ðŸ“ Too far (${att.distance}m). Move closer and try again`,'error');
@@ -815,8 +845,9 @@ async function submitStudentAttendance() {
     }
   } catch(e) {
     toast('Error: ' + e.message,'error');
+  } finally {
+    if (btn) setLoading('btn-student-attendance', false);
   }
-  if (btn) setLoading('btn-student-attendance', false);
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
