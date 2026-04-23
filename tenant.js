@@ -103,17 +103,22 @@ function setTenantLoading(on, text) {
   box.style.display = on ? 'flex' : 'none';
 }
 
-function jsonpRequest(url, timeoutMs = 20000) {
+function jsonpRequest(url, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
     const cb = '__ba_jsonp_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     const script = document.createElement('script');
     const sep = url.includes('?') ? '&' : '?';
     let timer = null;
 
-    function cleanup() {
+    function cleanup(options = {}) {
+      const preserveCallback = !!options.preserveCallback;
       if (timer) clearTimeout(timer);
       if (script.parentNode) script.parentNode.removeChild(script);
-      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      if (preserveCallback) {
+        window[cb] = () => {};
+      } else {
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      }
     }
 
     window[cb] = data => {
@@ -123,14 +128,14 @@ function jsonpRequest(url, timeoutMs = 20000) {
 
     script.async = true;
     script.onerror = () => {
-      cleanup();
+      cleanup({ preserveCallback: true });
       reject(new Error('Failed to load tenant response'));
     };
     script.src = `${url}${sep}callback=${encodeURIComponent(cb)}`;
     document.head.appendChild(script);
 
     timer = setTimeout(() => {
-      cleanup();
+      cleanup({ preserveCallback: true });
       reject(new Error('Tenant request timed out'));
     }, timeoutMs);
   });
