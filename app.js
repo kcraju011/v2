@@ -426,7 +426,21 @@ function isAdminRole(userOrRole) {
 }
 
 function isTeacherRole(userOrRole) {
-  return roleNameOf(userOrRole) === 'teacher';
+  const role = roleNameOf(userOrRole);
+  return role === 'teacher' || role === 'faculty';
+}
+
+function connectLiveRealtime() {
+  if (!window.bioAttendRealtime || typeof window.bioAttendRealtime.subscribeAttendance !== 'function') {
+    return;
+  }
+  window.bioAttendRealtime.subscribeAttendance(() => {
+    if (isTeacherDashboardVisible() && isLiveTabActive()) {
+      refreshLive(true, true).catch(() => null);
+    } else {
+      checkActiveSess().catch(() => null);
+    }
+  });
 }
 
 function getTenantRoleOptions() {
@@ -1174,6 +1188,7 @@ async function handleTeacherLogin() {
     if(!isTeacherRole(d) && !isAdminRole(d)){toast('Not a teacher or admin account','error');setLoading('btn-t-login',false);return;}
     teacherData=d;
     persistTeacherSession(d);
+    connectLiveRealtime();
     document.getElementById('t-login-section').style.display='none';
     document.getElementById('t-dashboard').style.display='block';
     document.getElementById('t-welcome').textContent='Hello, '+d.name;
@@ -1185,6 +1200,9 @@ async function handleTeacherLogin() {
 async function teacherLogout(silent=false){
   teacherData=null;clearInterval(sessionTimer);liveSessionId=null;
   stopLivePolling();
+  if (window.bioAttendRealtime && typeof window.bioAttendRealtime.unsubscribeAttendance === 'function') {
+    window.bioAttendRealtime.unsubscribeAttendance();
+  }
   liveLastSyncTime='';
   liveData=null;
   liveMapMarkers = {};
@@ -1817,6 +1835,18 @@ try{
 }catch(e){}
 (async () => {
   const ok = await bootTenant();
-  if (ok !== false) applyTenantToRegistration();
+  if (ok === false) return;
+  applyTenantToRegistration();
+  if (teacherData && teacherData.guid === tenantState.guid && (isTeacherRole(teacherData) || isAdminRole(teacherData))) {
+    const loginSection = document.getElementById('t-login-section');
+    const dashboard = document.getElementById('t-dashboard');
+    const welcome = document.getElementById('t-welcome');
+    if (loginSection) loginSection.style.display = 'none';
+    if (dashboard) dashboard.style.display = 'block';
+    if (welcome) welcome.textContent = 'Hello, ' + (teacherData.name || 'Teacher');
+    connectLiveRealtime();
+    switchSub('session');
+    checkActiveSess();
+  }
 })();
 
