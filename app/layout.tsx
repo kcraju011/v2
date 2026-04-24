@@ -5,7 +5,10 @@ import { PwaRegister } from "@/components/pwa/pwa-register";
 export const metadata: Metadata = {
   title: "BioAttend SaaS",
   description: "Production-grade multi-tenant attendance SaaS powered by Supabase",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest"
+};
+
+export const viewport = {
   themeColor: "#4f46e5"
 };
 

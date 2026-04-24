@@ -23,14 +23,14 @@ function createTenantAwareSupabase(request: NextRequest, response: NextResponse,
   const config = getTenantSupabasePublicConfig(tenant);
   const supabase = createServerClient(config.url, config.anonKey, {
     cookies: {
-      get(name) {
+      get(name: string) {
         return request.cookies.get(name)?.value;
       },
-      set(name, value, options) {
-        response.cookies.set({ name, value, ...options });
+      set(name: string, value: string, options?: Parameters<typeof response.cookies.set>[2]) {
+        response.cookies.set(name, value, options);
       },
-      remove(name, options) {
-        response.cookies.set({ name, value: "", ...options });
+      remove(name: string, options?: Parameters<typeof response.cookies.set>[2]) {
+        response.cookies.set(name, "", { ...options, maxAge: 0 });
       }
     }
   });

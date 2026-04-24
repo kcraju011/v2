@@ -23,24 +23,34 @@ export function LiveMap({ tenant }: { tenant: TenantConfig }) {
     if (!mapRef.current || !markersRef.current) return;
     markersRef.current.clearLayers();
 
-    const points: L.LatLngExpression[] = [];
+    const points: [number, number][] = [];
+
     rows.forEach((row) => {
-      if (typeof row.latitude !== "number" || typeof row.longitude !== "number") return;
+      const latitude = Number(row.latitude);
+      const longitude = Number(row.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
       const color = row.status === "in" ? "#16a34a" : row.status === "recent" ? "#ca8a04" : "#dc2626";
-      L.circleMarker([row.latitude, row.longitude], {
+      L.circleMarker([latitude, longitude], {
         radius: 9,
         color,
         fillColor: color,
         fillOpacity: 0.8,
         weight: 2
       })
-        .bindPopup(`<strong>${row.name}</strong><br>${row.department}<br>${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`)
+        .bindPopup(`<strong>${row.name}</strong><br>${row.department}<br>${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
         .addTo(markersRef.current!);
-      points.push([row.latitude, row.longitude]);
+      points.push([latitude, longitude]);
     });
 
+    if (points.length === 1) {
+      points.push(points[0]);
+    }
+
     if (points.length) {
-      mapRef.current.fitBounds(points, { padding: [30, 30] });
+      const bounds = L.latLngBounds(points);
+      mapRef.current.fitBounds(bounds);
     }
   }, [rows]);
 
