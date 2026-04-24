@@ -12,29 +12,41 @@ function buildTenantUrl(request: NextRequest, tenantSlug: string, pathname: stri
   return url;
 }
 
-function isLegacyTopLevelRoute(pathname: string) {
-  return pathname === "/login" || pathname === "/register" || pathname === "/dashboard" || pathname === "/";
+function isStaticOrApiPath(pathname: string) {
+  return pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname.includes(".");
 }
 
 export function middleware(request: NextRequest) {
-  const { pathname, searchParams } = request.nextUrl;
-  const q = searchParams.get("q");
+  try {
+    const { pathname, searchParams } = request.nextUrl;
 
-  if (q && LEGACY_TENANT_MAP[q]) {
-    const url = buildTenantUrl(request, LEGACY_TENANT_MAP[q], pathname);
-    url.searchParams.delete("q");
-    return NextResponse.redirect(url);
+    if (isStaticOrApiPath(pathname)) {
+      return NextResponse.next();
+    }
+
+    const q = searchParams.get("q");
+    if (q && LEGACY_TENANT_MAP[q]) {
+      const url = buildTenantUrl(request, LEGACY_TENANT_MAP[q], pathname);
+      url.searchParams.delete("q");
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === "/t") {
+      return NextResponse.redirect(new URL(`/t/${DEFAULT_TENANT_SLUG}`, request.url));
+    }
+
+    if (pathname.startsWith("/t/")) {
+      const tenant = pathname.split("/")[2];
+      if (!tenant) {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+    }
+
+    return NextResponse.next();
+  } catch (error) {
+    console.error("Middleware error:", error);
+    return NextResponse.next();
   }
-
-  if (pathname === "/t") {
-    return NextResponse.redirect(new URL(`/t/${DEFAULT_TENANT_SLUG}`, request.url));
-  }
-
-  if (isLegacyTopLevelRoute(pathname)) {
-    return NextResponse.redirect(buildTenantUrl(request, DEFAULT_TENANT_SLUG, pathname));
-  }
-
-  return NextResponse.next();
 }
 
 export const config = {
