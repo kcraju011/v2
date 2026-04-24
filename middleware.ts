@@ -35,16 +35,8 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL(`/t/${DEFAULT_TENANT_SLUG}`, request.url));
     }
 
-    if (pathname.startsWith("/t/")) {
-      const tenant = pathname.split("/")[2];
-      if (!tenant) {
-        return NextResponse.redirect(new URL("/", request.url));
-      }
-    }
-
     return NextResponse.next();
   } catch (error) {
-    console.error("Middleware error:", error);
     return NextResponse.next();
   }
 }
