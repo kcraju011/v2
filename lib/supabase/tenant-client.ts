@@ -1,5 +1,4 @@
-import { createBrowserClient, createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createBrowserClient } from "@supabase/ssr";
 import type { TenantConfig } from "@/lib/tenant/config";
 
 function requireTenantEnv(key: string) {
@@ -29,21 +28,18 @@ export function createTenantBrowserClient(tenant: TenantConfig) {
   return createBrowserClient(config.url, config.anonKey);
 }
 
-export function createTenantServerClient(tenant: TenantConfig) {
-  const cookieStore = cookies();
-  const config = getTenantSupabasePublicConfig(tenant);
+export function scopeTenantQuery<TQuery extends { eq(column: string, value: string): TQuery }>(
+  query: TQuery,
+  tenantId: string
+) {
+  return query.eq("tenant_id", tenantId);
+}
 
-  return createServerClient(config.url, config.anonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name: string, options) {
-        cookieStore.set({ name, value: "", ...options });
-      }
-    }
-  });
+export function tenantIdFromMetadata(metadata: Record<string, unknown> | undefined | null) {
+  const tenantId = metadata?.tenant_id;
+  return typeof tenantId === "string" && tenantId.trim() ? tenantId : null;
+}
+
+export function isTenantMatch(metadata: Record<string, unknown> | undefined | null, tenantId: string) {
+  return tenantIdFromMetadata(metadata) === tenantId;
 }
