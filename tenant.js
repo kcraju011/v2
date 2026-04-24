@@ -69,6 +69,8 @@ let teacherData   = null;
 let sessionTimer  = null;
 let liveSessionId = null;
 let liveData      = null;
+let livePollTimer = null;
+let liveLastSyncTime = '';
 let liveTab       = 'present';
 let allStudents   = [];
 let historyData   = [];
@@ -142,6 +144,7 @@ function jsonpRequest(url, timeoutMs = 45000) {
 }
 
 function getAuthToken() {
+  if (window.__ba_auth_token) return window.__ba_auth_token;
   if (teacherData?.authToken) return teacherData.authToken;
   try {
     return localStorage.getItem('ba_auth_token') || '';
@@ -150,23 +153,144 @@ function getAuthToken() {
   }
 }
 
+function getRefreshToken() {
+  if (window.__ba_refresh_token) return window.__ba_refresh_token;
+  if (teacherData?.refreshToken) return teacherData.refreshToken;
+  try {
+    return localStorage.getItem('ba_refresh_token') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function getAuthExpiresAt() {
+  try {
+    return localStorage.getItem('ba_auth_expires_at') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function isAuthExpired() {
+  const expiresAt = getAuthExpiresAt();
+  if (!expiresAt) return false;
+  const ms = Date.parse(expiresAt);
+  return !Number.isNaN(ms) && Date.now() >= ms;
+}
+
+function scheduleAuthExpiry() {
+  try {
+    if (window.__ba_auth_expiry_timer) {
+      clearTimeout(window.__ba_auth_expiry_timer);
+      window.__ba_auth_expiry_timer = null;
+    }
+    const expiresAt = getAuthExpiresAt();
+    if (!expiresAt) return;
+    const ms = Date.parse(expiresAt);
+    if (Number.isNaN(ms)) return;
+    const delay = ms - Date.now();
+    if (delay <= 0) {
+      handleExpiredAuth();
+      return;
+    }
+    window.__ba_auth_expiry_timer = setTimeout(() => {
+      handleExpiredAuth();
+    }, delay);
+  } catch (e) {}
+}
+
+function handleExpiredAuth() {
+  clearTeacherSession();
+  try {
+    if (typeof signedInUser !== 'undefined') signedInUser = null;
+    if (typeof markedUserId !== 'undefined') markedUserId = null;
+    if (typeof stopTracking === 'function') stopTracking();
+  } catch (e) {}
+  if (typeof teacherLogout === 'function') {
+    try { teacherLogout(true); } catch (e) {}
+  }
+  if (typeof restoreSignInForm === 'function') {
+    try { restoreSignInForm(); } catch (e) {}
+  }
+}
+
 function persistTeacherSession(data) {
   if (!data?.authToken) return;
   try {
+    window.__ba_auth_token = data.authToken;
+    window.__ba_refresh_token = data.refreshToken || '';
     localStorage.setItem('ba_auth_token', data.authToken);
+    if (data.refreshToken) localStorage.setItem('ba_refresh_token', data.refreshToken);
+    if (data.authExpiresAt) localStorage.setItem('ba_auth_expires_at', data.authExpiresAt);
+    if (data.refreshExpiresAt) localStorage.setItem('ba_refresh_expires_at', data.refreshExpiresAt);
+    if (data.userId) localStorage.setItem('ba_auth_user_id', String(data.userId));
+    if (data.roleId) localStorage.setItem('ba_auth_role', String(data.roleId));
+    if (data.guid) localStorage.setItem('ba_auth_guid', String(data.guid));
+    if (data.deviceId) localStorage.setItem('ba_auth_device_id', String(data.deviceId));
     localStorage.setItem('ba_teacher_session', JSON.stringify(data));
+    scheduleAuthExpiry();
   } catch (e) {}
 }
 
 function clearTeacherSession() {
   try {
+    window.__ba_auth_token = '';
+    window.__ba_refresh_token = '';
     localStorage.removeItem('ba_auth_token');
+    localStorage.removeItem('ba_refresh_token');
+    localStorage.removeItem('ba_auth_expires_at');
+    localStorage.removeItem('ba_refresh_expires_at');
+    localStorage.removeItem('ba_auth_user_id');
+    localStorage.removeItem('ba_auth_role');
+    localStorage.removeItem('ba_auth_guid');
+    localStorage.removeItem('ba_auth_device_id');
     localStorage.removeItem('ba_teacher_session');
+    if (window.__ba_auth_expiry_timer) {
+      clearTimeout(window.__ba_auth_expiry_timer);
+      window.__ba_auth_expiry_timer = null;
+    }
+    if (typeof teacherData !== 'undefined') teacherData = null;
+    if (typeof signedInUser !== 'undefined') signedInUser = null;
   } catch (e) {}
+}
+
+function authExpirySoon() {
+  const expiresAt = getAuthExpiresAt();
+  if (!expiresAt) return false;
+  const ms = Date.parse(expiresAt);
+  if (Number.isNaN(ms)) return false;
+  return (ms - Date.now()) < 60 * 1000;
+}
+
+async function refreshAccessToken() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  const payload = {
+    action: 'refreshToken',
+    refreshToken,
+    guid: tenantState.guid
+  };
+  const res = await jsonpRequest(TENANT_API + '?data=' + encodeURIComponent(JSON.stringify(payload)));
+  if (res && res.success && res.authToken) {
+    persistTeacherSession(res);
+    if (typeof teacherData !== 'undefined' && teacherData) teacherData = { ...teacherData, ...res };
+    if (typeof signedInUser !== 'undefined' && signedInUser) signedInUser = { ...signedInUser, ...res };
+    return res;
+  }
+  return null;
 }
 
 async function api(payload) {
   if (!TENANT_API) throw new Error('Tenant API is not initialized');
+  if (isAuthExpired()) {
+    const refreshed = await refreshAccessToken().catch(() => null);
+    if (!refreshed) {
+      handleExpiredAuth();
+      throw new Error('Session expired');
+    }
+  } else if (authExpirySoon()) {
+    await refreshAccessToken().catch(() => null);
+  }
   const requestPayload = { ...(payload || {}) };
   if (!requestPayload.guid && tenantState.guid) requestPayload.guid = tenantState.guid;
   if (!requestPayload.authToken) {
@@ -174,9 +298,24 @@ async function api(payload) {
     if (authToken) requestPayload.authToken = authToken;
   }
   const url = TENANT_API + '?data=' + encodeURIComponent(JSON.stringify(requestPayload));
-  console.log( "TENNANT API=" + url);
-  
-  return jsonpRequest(url);
+  console.log('TENNANT API request sent');
+  let response = await jsonpRequest(url);
+  if (response && response.success === false) {
+    const message = String(response.message || '').toLowerCase();
+    const code = String(response.code || '').toUpperCase();
+    if (code === 'TOKEN_EXPIRED' || message.includes('session expired')) {
+      const refreshed = await refreshAccessToken().catch(() => null);
+      if (refreshed) {
+        requestPayload.authToken = getAuthToken();
+        response = await jsonpRequest(TENANT_API + '?data=' + encodeURIComponent(JSON.stringify(requestPayload)));
+      } else {
+        handleExpiredAuth();
+      }
+    } else if (message.includes('unauthorized') || message.includes('authentication required')) {
+      handleExpiredAuth();
+    }
+  }
+  return response;
 }
 
 // â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

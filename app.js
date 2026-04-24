@@ -12,15 +12,91 @@
   }
 }
 
+let livePollTimer = null;
+let liveRefreshInFlight = false;
+let liveRefreshQueued = false;
+let liveRetryDelay = 3000;
+let liveLastActivityAt = Date.now();
+let liveLastRequestAt = 0;
+let liveLastSyncTime = '';
+let liveSessionId = null;
+let liveData = null;
+let liveTab = 'present';
+let liveMap = null;
+let liveMapMarkers = {};
+let analyticsCharts = { daily: null, weekly: null };
+
+function markLiveActivity() {
+  liveLastActivityAt = Date.now();
+}
+
+['mousemove', 'keydown', 'touchstart', 'scroll', 'focus'].forEach(function(evt) {
+  document.addEventListener(evt, markLiveActivity, { passive: true, capture: true });
+});
+
+function isTeacherDashboardVisible() {
+  const dash = document.getElementById('t-dashboard');
+  return !!dash && dash.style.display !== 'none';
+}
+
+function isLiveTabActive() {
+  return !!document.getElementById('sp-live')?.classList.contains('active');
+}
+
+function getLivePollDelay() {
+  if (document.visibilityState !== 'visible') return null;
+  const recentActivity = Date.now() - liveLastActivityAt < 15000;
+  return recentActivity ? 3000 : 10000;
+}
+
+async function livePollTick() {
+  livePollTimer = null;
+  if (!isTeacherDashboardVisible() || !isLiveTabActive() || document.visibilityState !== 'visible') return;
+  await refreshLive(false, true);
+  if (livePollTimer) return;
+  const delay = getLivePollDelay();
+  if (delay !== null) {
+    livePollTimer = setTimeout(livePollTick, delay);
+  }
+}
+
 function switchSub(tab) {
-  ['session','live','history','students'].forEach(t => {
+  ['session','live','history','students','analytics'].forEach(t => {
     document.getElementById('sp-'+t).classList.toggle('active', t===tab);
     document.getElementById('stab-'+t).classList.toggle('active', t===tab);
   });
-  if (tab==='live')     refreshLive();
+  if (tab==='live')     { refreshLive(true); startLivePolling(); }
+  else                  stopLivePolling();
   if (tab==='history')  { document.getElementById('hist-date').value = new Date().toISOString().slice(0,10); loadHistory(); }
   if (tab==='students') loadStudents();
+  if (tab==='analytics') loadAnalytics(true);
 }
+
+function startLivePolling() {
+  if (livePollTimer || !isTeacherDashboardVisible() || !isLiveTabActive()) return;
+  const delay = getLivePollDelay();
+  if (delay === null) return;
+  livePollTimer = setTimeout(livePollTick, delay);
+}
+
+function stopLivePolling() {
+  if (livePollTimer) {
+    clearTimeout(livePollTimer);
+    livePollTimer = null;
+  }
+  liveRefreshInFlight = false;
+  liveRefreshQueued = false;
+  liveRetryDelay = 3000;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && isTeacherDashboardVisible() && isLiveTabActive()) {
+    startLivePolling();
+    refreshLive();
+  } else if (document.visibilityState !== 'visible') {
+    stopLivePolling();
+  }
+});
 
 function switchAdmin(tab) {
   ['dept','loc','ulmap','atttype'].forEach(t => {
@@ -196,6 +272,21 @@ function restoreSignInForm() {
   const pw=document.getElementById('si-password');if(pw)pw.value='';
   markedUserId=null;
   try{['ba_uid','ba_name','ba_date','ba_time','ba_lat','ba_lng','ba_loc','ba_meth','ba_dist'].forEach(k=>sessionStorage.removeItem(k));}catch(e){}
+}
+
+function base64UrlToUint8Array(value) {
+  const padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const withPad = padded + '='.repeat((4 - (padded.length % 4)) % 4);
+  const raw = atob(withPad);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+function bufferToBase64Url(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -758,18 +849,34 @@ async function handleBiometricSignIn() {
   const btn=document.getElementById('btn-bio-signin');
   if(btn){btn._h=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Verifyingâ€¦';btn.disabled=true;}
   try{
-    const info = await api({action:'getBiometric', email});
-    if(!info.success||!info.credentialId){toast(info.message||'No biometric registered','error');return;}
+    const begin = await api({action:'beginWebAuthnLogin', email, guid: tenantState.guid});
+    if(!begin.success||!begin.credentialId||!begin.challenge){toast(begin.message||'No biometric registered','error');return;}
 
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const rawId = Uint8Array.from(atob(info.credentialId), c=>c.charCodeAt(0));
-    await navigator.credentials.get({publicKey:{
-      challenge, userVerification:'required', timeout:60000,
-      allowCredentials:[{type:'public-key',id:rawId}]
+    const cred = await navigator.credentials.get({publicKey:{
+      challenge: base64UrlToUint8Array(begin.challenge),
+      userVerification:'required', timeout:60000,
+      allowCredentials:[{type:'public-key',id:base64UrlToUint8Array(begin.credentialId)}]
     }});
 
-    signedInUser = info;
-    const roleValue = normalizeRoleKey(info.roleKey || info.roleId || '');
+    const deviceId = await getDeviceId();
+    const session = await api({
+      action: 'finishWebAuthnLogin',
+      email,
+      challengeId: begin.challengeId,
+      challenge: begin.challenge,
+      credentialId: bufferToBase64Url(cred.rawId),
+      clientDataJSON: cred.response?.clientDataJSON ? bufferToBase64Url(cred.response.clientDataJSON) : '',
+      authenticatorData: cred.response?.authenticatorData ? bufferToBase64Url(cred.response.authenticatorData) : '',
+      signature: cred.response?.signature ? bufferToBase64Url(cred.response.signature) : '',
+      userHandle: cred.response?.userHandle ? bufferToBase64Url(cred.response.userHandle) : '',
+      deviceId,
+      guid: tenantState.guid
+    });
+    if(!session.success){toast(session.message||'Biometric login failed','error');return;}
+
+    signedInUser = session;
+    persistTeacherSession(session);
+    const roleValue = normalizeRoleKey(session.roleKey || session.roleId || '');
     showLocBar('ok','Fingerprint / Face ID verified');
 
     if (isAdminRole(roleValue)) {
@@ -794,10 +901,12 @@ async function handlePasswordSignIn() {
   const btn = document.getElementById('btn-pass-signin');
   if(btn){btn._h=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Verifyingâ€¦';btn.disabled=true;}
   try{
-    const info = await api({action:'loginUser', email, password});
+    const deviceId = await getDeviceId();
+    const info = await api({action:'loginUser', email, password, deviceId, guid: tenantState.guid});
     if(!info.success){toast(info.message||'Invalid credentials','error');return;}
 
     signedInUser = info;
+    persistTeacherSession(info);
     const roleValue = normalizeRoleKey(info.roleKey || info.roleId || '');
     showLocBar('ok','Password verified');
 
@@ -940,9 +1049,12 @@ async function collectRegistrationBiometric(name, email) {
   if (!window.PublicKeyCredential) {
     throw new Error('WebAuthn not supported');
   }
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const begin = await api({ action: 'beginWebAuthnRegistration', email, name, guid: tenantState.guid });
+  if (!begin.success || !begin.challengeId || !begin.challenge) {
+    throw new Error(begin.message || 'Unable to start biometric registration');
+  }
   const cred = await navigator.credentials.create({ publicKey: {
-    challenge,
+    challenge: base64UrlToUint8Array(begin.challenge),
     rp: { name: `BioAttend ${tenantState.institution?.name || ''}`.trim(), id: location.hostname },
     user: {
       id: crypto.getRandomValues(new Uint8Array(16)),
@@ -953,7 +1065,14 @@ async function collectRegistrationBiometric(name, email) {
     authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
     timeout: 60000
   }});
-  return btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+  return {
+    credentialId: bufferToBase64Url(cred.rawId),
+    publicKey: cred.response?.getPublicKey ? bufferToBase64Url(await cred.response.getPublicKey()) : '',
+    challengeId: begin.challengeId,
+    challenge: begin.challenge,
+    clientDataJSON: cred.response?.clientDataJSON ? bufferToBase64Url(cred.response.clientDataJSON) : '',
+    attestationObject: cred.response?.attestationObject ? bufferToBase64Url(cred.response.attestationObject) : ''
+  };
 }
 
 async function handleRegisterV2() {
@@ -992,7 +1111,7 @@ async function handleRegisterV2() {
   setLoading('btn-register',true);
   try{
     const dId = await getDeviceId();
-    const biometricCode = await collectRegistrationBiometric(name, email);
+    const biometric = await collectRegistrationBiometric(name, email);
     const d   = await api({
       action:               'registerUser',
       name, email, password:pass, dob, mobile,
@@ -1003,14 +1122,29 @@ async function handleRegisterV2() {
       studentEmployeeId:    memberId,
       studyLevel:           studyLevel,
       designation:          designation,
-      biometricCode:        biometricCode,
+      biometricCode:        biometric.credentialId,
+      publicKey:            biometric.publicKey || '',
       deviceId:             dId
     });
     if(d.success){
       registeredUid=d.userId;
       registerFlowState.accountCreated = true;
       toast('âœ“ Account created with biometric access.','success');
-      await api({action:'registerDevice',userId:d.userId,deviceId:dId});
+      const biometricBind = await api({
+        action: 'finishWebAuthnRegistration',
+        email,
+        name,
+        challengeId: biometric.challengeId,
+        challenge: biometric.challenge,
+        credentialId: biometric.credentialId,
+        publicKey: biometric.publicKey || '',
+        clientDataJSON: biometric.clientDataJSON || '',
+        attestationObject: biometric.attestationObject || '',
+        guid: tenantState.guid
+      });
+      if (!biometricBind.success) {
+        toast(biometricBind.message || 'Biometric binding failed', 'error');
+      }
     }else toast(d.message,'error');
   }catch(e){
     if(e.name==='NotAllowedError') toast('Biometric cancelled','warn');
@@ -1034,7 +1168,8 @@ async function handleTeacherLogin() {
   if(!email||!pass){toast('Enter email and password','error');return;}
   setLoading('btn-t-login',true);
   try{
-    const d=await api({action:'loginUser',email,password:pass});
+    const deviceId = await getDeviceId();
+    const d=await api({action:'loginUser',email,password:pass,deviceId,guid: tenantState.guid});
     if(!d.success){toast(d.message,'error');setLoading('btn-t-login',false);return;}
     if(!isTeacherRole(d) && !isAdminRole(d)){toast('Not a teacher or admin account','error');setLoading('btn-t-login',false);return;}
     teacherData=d;
@@ -1047,12 +1182,30 @@ async function handleTeacherLogin() {
   setLoading('btn-t-login',false);
 }
 
-function teacherLogout(){
+async function teacherLogout(silent=false){
   teacherData=null;clearInterval(sessionTimer);liveSessionId=null;
+  stopLivePolling();
+  liveLastSyncTime='';
+  liveData=null;
+  liveMapMarkers = {};
+  if (liveMap) {
+    try { liveMap.remove(); } catch (e) {}
+    liveMap = null;
+  }
+  if (analyticsCharts.daily) { try { analyticsCharts.daily.destroy(); } catch (e) {} analyticsCharts.daily = null; }
+  if (analyticsCharts.weekly) { try { analyticsCharts.weekly.destroy(); } catch (e) {} analyticsCharts.weekly = null; }
+  if(!silent){
+    try{await api({action:'logout', guid: tenantState.guid});}catch(e){}
+  }
   clearTeacherSession();
-  document.getElementById('t-login-section').style.display='block';
-  document.getElementById('t-dashboard').style.display='none';
-  document.getElementById('t-email').value='';document.getElementById('t-password').value='';
+  const loginSection = document.getElementById('t-login-section');
+  const dashboard = document.getElementById('t-dashboard');
+  const email = document.getElementById('t-email');
+  const password = document.getElementById('t-password');
+  if(loginSection) loginSection.style.display='block';
+  if(dashboard) dashboard.style.display='none';
+  if(email) email.value='';
+  if(password) password.value='';
 }
 
 async function checkActiveSess(){
@@ -1082,64 +1235,346 @@ async function openSession(){
   try{
     const d=await api({action:'createSession',userId:teacherData.userId,teacherName:teacherData.name,
                        roleId:teacherData.roleId,subject:subj,windowMinutes:win});
-    if(d.success){toast('âœ“ Session opened','success');document.getElementById('t-subject').value='';checkActiveSess();}
+    if(d.success){toast('âœ“ Session opened','success');document.getElementById('t-subject').value='';liveLastSyncTime='';checkActiveSess();if(document.getElementById('sp-live')?.classList.contains('active')) refreshLive(true);}
     else toast(d.message,'error');
   }catch(e){toast('Error: '+e.message,'error');}
   setLoading('btn-open-sess',false);
 }
 
 async function closeSess(sid){
-  try{await api({action:'closeSession',sessionId:sid});toast('Session closed','success');clearInterval(sessionTimer);liveSessionId=null;checkActiveSess();}
+  try{await api({action:'closeSession',sessionId:sid});toast('Session closed','success');clearInterval(sessionTimer);liveSessionId=null;liveLastSyncTime='';checkActiveSess();stopLivePolling();}
   catch(e){toast('Error','error');}
 }
 
 // â”€â”€ Live dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-async function refreshLive(){
+function normalizeLivePayload(payload) {
+  const attendance = payload?.liveAttendance || payload || {};
+  const activeUsers = attendance.activeUsers || attendance.present || [];
+  const offlineUsers = attendance.offlineUsers || attendance.absent || [];
+  const recentlyExited = attendance.recentlyExited || [];
+  return {
+    sessionId: attendance.sessionId || payload?.sessionId || liveSessionId || '',
+    session: attendance.session || payload?.session || null,
+    totalIn: attendance.totalIn ?? activeUsers.length,
+    totalOut: attendance.totalOut ?? offlineUsers.length,
+    activeUsers,
+    offlineUsers,
+    recentlyExited,
+    locations: payload?.locations?.locations || payload?.locations || [],
+    updatedAt: attendance.updatedAt || payload?.syncedAt || payload?.updatedAt || new Date().toISOString()
+  };
+}
+
+async function refreshLive(force = false, internal = false){
+  if (liveRefreshInFlight) {
+    liveRefreshQueued = true;
+    return liveData;
+  }
+  liveRefreshInFlight = true;
+  markLiveActivity();
   const listEl=document.getElementById('live-list');
   const infoEl=document.getElementById('live-info');
   const statEl=document.getElementById('live-stats');
   const toolEl=document.getElementById('live-toolbar');
   const refEl=document.getElementById('live-refresh');
   try{const chk=await api({action:'getActiveSession'});if(chk.active)liveSessionId=chk.session.session_id;}catch(e){}
-  if(!liveSessionId){infoEl.className='no-session';infoEl.style.display='block';infoEl.textContent='No active session â€” open one from Session tab';statEl.style.display='none';toolEl.style.display='none';refEl.style.display='none';listEl.innerHTML='';return;}
+  if(!liveSessionId){
+    infoEl.className='no-session';infoEl.style.display='block';infoEl.textContent='No active session â€” open one from Session tab';
+    statEl.style.display='none';toolEl.style.display='none';refEl.style.display='none';listEl.innerHTML='';
+    renderLiveMap([]);
+    stopLivePolling();
+    liveRefreshInFlight = false;
+    return null;
+  }
   try{
-    const d=await api({action:'getDashboard',sessionId:liveSessionId});
-    if(!d.success){toast(d.message,'error');return;}
-    liveData=d;
+    const payload = !liveLastSyncTime || force
+      ? { action:'getLiveAttendance', sessionId: liveSessionId }
+      : { action:'getLiveUpdates', sessionId: liveSessionId, lastSyncTime: liveLastSyncTime, waitMs: internal ? 4000 : 0 };
+    const d=await api(payload);
+    if(!d.success){throw new Error(d.message || 'Live refresh failed');}
+    liveData=normalizeLivePayload(d);
+    liveLastSyncTime=liveData.updatedAt;
+    liveRetryDelay = 3000;
     infoEl.style.display='none';statEl.style.display='grid';toolEl.style.display='flex';refEl.style.display='block';
-    document.getElementById('sp').textContent=d.presentCount;
-    document.getElementById('sa').textContent=d.absentCount;
-    document.getElementById('st').textContent=d.total;
-    document.getElementById('spc').textContent=d.total?Math.round(d.presentCount/d.total*100)+'%':'0%';
-    document.getElementById('live-updated').textContent='Updated '+new Date().toLocaleTimeString();
+    const activeCount = liveData.activeUsers.length;
+    const offlineCount = liveData.offlineUsers.length;
+    const total = activeCount + offlineCount;
+    document.getElementById('sp').textContent=activeCount;
+    document.getElementById('sa').textContent=offlineCount;
+    document.getElementById('st').textContent=total;
+    document.getElementById('spc').textContent=total?Math.round(activeCount/total*100)+'%':'0%';
+    const updatedEl = document.getElementById('live-updated');
+    if (updatedEl) updatedEl.textContent='Updated '+new Date(liveData.updatedAt).toLocaleTimeString();
     renderLiveList();
-  }catch(e){toast('Error: '+e.message,'error');}
+    renderLiveMap(liveData.locations || []);
+    return liveData;
+  }catch(e){
+    liveRetryDelay = Math.min(liveRetryDelay * 2, 30000);
+    if (internal && isTeacherDashboardVisible() && isLiveTabActive() && document.visibilityState === 'visible') {
+      if (livePollTimer) clearTimeout(livePollTimer);
+      livePollTimer = setTimeout(livePollTick, liveRetryDelay);
+    }
+    toast('Error: '+e.message,'error');
+    return null;
+  } finally {
+    liveRefreshInFlight = false;
+    if (liveRefreshQueued) {
+      liveRefreshQueued = false;
+      if (!livePollTimer && isTeacherDashboardVisible() && isLiveTabActive() && document.visibilityState === 'visible') {
+        livePollTimer = setTimeout(livePollTick, getLivePollDelay() || liveRetryDelay);
+      }
+    }
+  }
 }
 
 function showLive(tab){
   liveTab=tab;
   document.getElementById('seg-p').classList.toggle('active',tab==='present');
   document.getElementById('seg-a').classList.toggle('active',tab==='absent');
+  const segR = document.getElementById('seg-r');
+  if (segR) segR.classList.toggle('active',tab==='recent');
   renderLiveList();
+  if (liveData) renderLiveMap(liveData.locations || []);
 }
 
 function renderLiveList(){
   if(!liveData)return;
   const el=document.getElementById('live-list');
-  const list=liveTab==='present'?liveData.present:liveData.absent;
-  if(!list||!list.length){el.innerHTML=`<div style="text-align:center;color:var(--muted);padding:16px;font-size:12px">${liveTab==='present'?'No one marked yet':'Everyone present! ðŸŽ‰'}</div>`;return;}
-  el.innerHTML=list.map((s,i)=>liveTab==='present'
-    ?`<div class="att-item"><div><div class="iname">${i+1}. ${s.name}</div><div class="imeta">${s.email} Â· ${s.department||'â€”'} Â· ${s.entryTime} Â· ${s.method}${s.exitTime?' â†’ exit '+s.exitTime:''}</div></div><span class="badge">âœ“</span></div>`
-    :`<div class="att-item"><div><div class="iname">${i+1}. ${s.name}</div><div class="imeta">${s.email} Â· ${s.department||'â€”'}</div></div><span class="badge absent">âœ—</span></div>`
-  ).join('');
+  let list=[];
+  if(liveTab==='present') list=liveData.activeUsers||[];
+  else if(liveTab==='absent') list=liveData.offlineUsers||[];
+  else list=liveData.recentlyExited||[];
+  if(!list||!list.length){
+    el.innerHTML=`<div style="text-align:center;color:var(--muted);padding:16px;font-size:12px">${liveTab==='present'?'No one is currently inside campus':(liveTab==='absent'?'Everyone is online or no active attendance yet':'No recent exits')}</div>`;
+    return;
+  }
+  el.innerHTML=list.map((s,i)=>{
+    const statusBadge = liveTab==='present'
+      ? `<span class="badge" style="background:#dcfce7;color:#166534">🟢 Online</span>`
+      : liveTab==='recent'
+        ? `<span class="badge" style="background:#fef3c7;color:#92400e">🟡 Recently exited</span>`
+        : `<span class="badge absent" style="background:#fee2e2;color:#991b1b">🔴 Offline</span>`;
+    const loc = s.location ? `${s.location.latitude||''}, ${s.location.longitude||''}` : 'no live location';
+    const forceBtn = liveTab==='present'
+      ? `<button class="export-btn" style="margin-left:8px;padding:5px 8px" onclick="event.stopPropagation();forceExitLiveUser('${s.userId}')">Force exit</button>`
+      : '';
+    return `<div class="att-item">
+      <div style="flex:1">
+        <div class="iname">${i+1}. ${s.name}</div>
+        <div class="imeta">${s.email} · ${s.department||'—'} · ${s.entryTime||''}${s.exitTime?' → exit '+s.exitTime:''} · ${loc}</div>
+        <div class="imeta" style="margin-top:3px">${s.lastSeenAt ? 'last seen ' + new Date(s.lastSeenAt).toLocaleTimeString() : ''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        ${statusBadge}
+        ${forceBtn}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function ensureLiveMap() {
+  const el = document.getElementById('live-map');
+  if (!el || typeof L === 'undefined') return null;
+  if (!liveMap) {
+    liveMap = L.map('live-map', { zoomControl: true, attributionControl: false }).setView([13.32609, 77.12623], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(liveMap);
+  }
+  setTimeout(() => {
+    try { liveMap.invalidateSize(); } catch (e) {}
+  }, 60);
+  return liveMap;
+}
+
+function renderLiveMap(locations) {
+  const map = ensureLiveMap();
+  if (!map) return;
+  const rows = Array.isArray(locations) ? locations : [];
+  Object.keys(liveMapMarkers || {}).forEach(key => {
+    try { map.removeLayer(liveMapMarkers[key]); } catch (e) {}
+  });
+  liveMapMarkers = {};
+
+  const activeSet = new Set((liveData?.activeUsers || []).map(u => String(u.userId || '')));
+  const recentSet = new Set((liveData?.recentlyExited || []).map(u => String(u.userId || '')));
+  const points = [];
+
+  rows.forEach(row => {
+    const lat = parseFloat(row.latitude);
+    const lng = parseFloat(row.longitude);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+    const uid = String(row.userId || row.user_id || '');
+    let color = '#dc2626';
+    let label = 'Offline';
+    if (activeSet.has(uid)) {
+      color = '#16a34a';
+      label = 'Inside campus';
+    } else if (recentSet.has(uid)) {
+      color = '#ca8a04';
+      label = 'Recently exited';
+    } else if (row.online) {
+      color = '#0ea5e9';
+      label = 'Online';
+    }
+    const marker = L.circleMarker([lat, lng], {
+      radius: 9,
+      color,
+      fillColor: color,
+      fillOpacity: 0.8,
+      weight: 2
+    }).addTo(map);
+    marker.bindPopup(`<strong>${row.name || uid}</strong><br>${label}<br>${lat.toFixed(5)}, ${lng.toFixed(5)}${row.timestamp ? '<br>' + row.timestamp : ''}`);
+    liveMapMarkers[uid || `${lat}-${lng}`] = marker;
+    points.push([lat, lng]);
+  });
+
+  if (points.length) {
+    const bounds = L.latLngBounds(points);
+    map.fitBounds(bounds.pad(0.2));
+  } else {
+    map.setView([13.32609, 77.12623], 16);
+  }
+}
+
+function renderAnalyticsCharts(daily, weekly) {
+  if (typeof Chart === 'undefined') return;
+  const dailyCtx = document.getElementById('daily-chart');
+  const weeklyCtx = document.getElementById('weekly-chart');
+  if (analyticsCharts.daily) { analyticsCharts.daily.destroy(); analyticsCharts.daily = null; }
+  if (analyticsCharts.weekly) { analyticsCharts.weekly.destroy(); analyticsCharts.weekly = null; }
+
+  if (dailyCtx && daily) {
+    const labels = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00');
+    analyticsCharts.daily = new Chart(dailyCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Entries', data: daily.entryTrend || [], borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.15)', tension: 0.35, fill: true },
+          { label: 'Exits', data: daily.exitTrend || [], borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.12)', tension: 0.35, fill: true }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+
+  if (weeklyCtx && weekly?.series) {
+    analyticsCharts.weekly = new Chart(weeklyCtx, {
+      type: 'bar',
+      data: {
+        labels: weekly.series.map(r => r.date),
+        datasets: [
+          { label: 'Present', data: weekly.series.map(r => r.present), backgroundColor: '#2563eb' },
+          { label: 'Late', data: weekly.series.map(r => r.late), backgroundColor: '#f59e0b' },
+          { label: 'Early Exit', data: weekly.series.map(r => r.early), backgroundColor: '#ef4444' }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+}
+
+function renderAnalyticsSummary(stats, weekly, insights, summary) {
+  const daily = stats || {};
+  const presentEl = document.getElementById('an-present');
+  const absentEl = document.getElementById('an-absent');
+  const lateEl = document.getElementById('an-late');
+  const rateEl = document.getElementById('an-rate');
+  if (presentEl) presentEl.textContent = daily.totalPresent ?? 0;
+  if (absentEl) absentEl.textContent = daily.totalAbsent ?? 0;
+  if (lateEl) lateEl.textContent = daily.lateEntries ?? 0;
+  if (rateEl) rateEl.textContent = (daily.avgAttendancePercent ?? 0) + '%';
+
+  renderAnalyticsCharts(daily, weekly);
+
+  const insightsBox = document.getElementById('insights-box');
+  if (insightsBox && insights) {
+    const late = (insights.lateEntries || []).slice(0, 5);
+    const early = (insights.earlyExits || []).slice(0, 5);
+    const abs = (insights.frequentAbsentees || []).slice(0, 5);
+    insightsBox.innerHTML = [
+      ...late.map(r => `<div class="att-item"><div><div class="iname">Late: ${r.name || r.userId}</div><div class="imeta">${r.date} · ${r.entryTime || ''}</div></div><span class="badge" style="background:#fef3c7;color:#92400e">Late</span></div>`),
+      ...early.map(r => `<div class="att-item"><div><div class="iname">Early exit: ${r.name || r.userId}</div><div class="imeta">${r.date} · ${r.exitTime || ''}</div></div><span class="badge absent" style="background:#fee2e2;color:#991b1b">Early</span></div>`),
+      ...abs.map(r => `<div class="att-item"><div><div class="iname">Frequent absentee: ${r.name || r.userId}</div><div class="imeta">${r.absentDays} absent days</div></div><span class="badge" style="background:#e0f2fe;color:#075985">Risk</span></div>`)
+    ].join('') || '<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No insights yet</div>';
+  }
+
+  const summaryBox = document.getElementById('summary-box');
+  if (summaryBox) {
+    if (!summary) {
+      summaryBox.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Enter a user ID to load a student summary</div>';
+    } else {
+      summaryBox.innerHTML = `
+        <div class="att-item" style="flex-direction:column;align-items:stretch">
+          <div style="display:flex;justify-content:space-between;gap:10px">
+            <div>
+              <div class="iname">${summary.name || summary.userId}</div>
+              <div class="imeta">${summary.email || ''}</div>
+            </div>
+            <span class="badge" style="background:#dcfce7;color:#166534">${summary.attendancePercent || 0}%</span>
+          </div>
+          <div class="imeta" style="margin-top:8px">Present ${summary.presentCount || 0} · Late ${summary.lateEntries || 0} · Early exits ${summary.earlyExits || 0}</div>
+          <div class="imeta" style="margin-top:4px">Recent records: ${summary.totalRecords || 0}</div>
+        </div>`;
+    }
+  }
+}
+
+async function loadAnalytics(force = false){
+  const dateEl = document.getElementById('analytics-date');
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0,10);
+  try{
+    const [daily, weekly, insights] = await Promise.all([
+      api({action:'getDailyStats', date: dateEl ? dateEl.value : '', guid: tenantState.guid}),
+      api({action:'getWeeklyStats', guid: tenantState.guid}),
+      api({action:'getAttendanceInsights', days: 14, guid: tenantState.guid})
+    ]);
+    if (!daily.success) throw new Error(daily.message || 'Daily stats failed');
+    if (!weekly.success) throw new Error(weekly.message || 'Weekly stats failed');
+    if (!insights.success) throw new Error(insights.message || 'Insights failed');
+    renderAnalyticsSummary(daily, weekly, insights, null);
+  }catch(e){
+    toast('Error: '+e.message,'error');
+  }
+}
+
+async function loadUserAttendanceSummary(){
+  const userId = document.getElementById('analytics-user-id')?.value.trim();
+  if (!userId) {
+    toast('Enter a user ID first','error');
+    return;
+  }
+  try{
+    const d = await api({action:'getUserAttendanceSummary', userId, guid: tenantState.guid});
+    if(!d.success) throw new Error(d.message || 'Summary failed');
+    const dateValue = document.getElementById('analytics-date')?.value || new Date().toISOString().slice(0,10);
+    const daily = await api({action:'getDailyStats', date: dateValue, guid: tenantState.guid});
+    const weekly = await api({action:'getWeeklyStats', guid: tenantState.guid});
+    const insights = await api({action:'getAttendanceInsights', days: 14, guid: tenantState.guid});
+    renderAnalyticsSummary(daily.success ? daily : null, weekly.success ? weekly : null, insights.success ? insights : null, d);
+  }catch(e){
+    toast('Error: '+e.message,'error');
+  }
 }
 
 function exportLive(){
   if(!liveData)return;
   const rows=[['full_name','email','department_id','entry_time','exit_time','login_method','type_attendance']];
-  liveData.present.forEach(s=>rows.push([s.name,s.email,s.department||'',s.entryTime,s.exitTime||'',s.method,'present']));
-  liveData.absent.forEach(s=>rows.push([s.name,s.email,s.department||'','','','','absent']));
+  (liveData.activeUsers||[]).forEach(s=>rows.push([s.name,s.email,s.department||'',s.entryTime,s.exitTime||'','','present']));
+  (liveData.offlineUsers||[]).forEach(s=>rows.push([s.name,s.email,s.department||'','','','','absent']));
   dlCSV(rows,'attendance_live.csv');
+}
+
+async function forceExitLiveUser(userId){
+  if(!userId)return;
+  if(!confirm('Force this user to exit?')) return;
+  try{
+    const d=await api({action:'forceExitUser',userId,sessionId:liveSessionId,guid:tenantState.guid});
+    if(d.success){toast('✓ User forced out','success');liveLastSyncTime='';refreshLive(true);}
+    else toast(d.message,'error');
+  }catch(e){toast('Error: '+e.message,'error');}
 }
 
 // â”€â”€ History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1378,6 +1813,7 @@ syncOrganizationName();
 try{
   const savedTeacher = localStorage.getItem('ba_teacher_session');
   if (savedTeacher) teacherData = JSON.parse(savedTeacher);
+  if (teacherData?.authToken) scheduleAuthExpiry();
 }catch(e){}
 (async () => {
   const ok = await bootTenant();

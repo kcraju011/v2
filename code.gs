@@ -24,7 +24,10 @@ var SH = {
   USER_INDEX   : 'UserIndex',
   AUTH_SESSIONS: 'AuthSessions',
   AUDIT_LOG    : 'AuditLog',
-  ATT_WINDOWS  : 'AttendanceWindows'
+  ATT_WINDOWS  : 'AttendanceWindows',
+  RATE_LIMIT   : 'RateLimit',
+  WEBAUTHN     : 'WebAuthnChallenges',
+  WEBAUTHN_CRED: 'WebAuthnCredentials'
 };
 
 // ── Exact column headers per table ───────────────────────────
@@ -68,7 +71,9 @@ var HEADERS = {
     'user_id', 'email', 'row_number'
   ],
   AuthSessions: [
-    'auth_token', 'user_id', 'role_name', 'created_at', 'expires_at', 'status'
+    'session_id', 'user_id', 'token', 'refresh_token', 'device_id',
+    'created_at', 'expires_at', 'refresh_expires_at', 'status',
+    'guid', 'role_name', 'last_seen_at'
   ],
   AuditLog: [
     'audit_id', 'event_type', 'actor_user_id', 'actor_role', 'target_user_id',
@@ -76,6 +81,16 @@ var HEADERS = {
   ],
   AttendanceWindows: [
     'window_id', 'name', 'start_time', 'duration_minutes', 'status', 'location_id'
+  ],
+  RateLimit: [
+    'key', 'count', 'last_request_time', 'window_start'
+  ],
+  WebAuthnChallenges: [
+    'challenge_id', 'user_id', 'action', 'challenge', 'created_at',
+    'expires_at', 'status', 'metadata'
+  ],
+  WebAuthnCredentials: [
+    'credential_id', 'user_id', 'public_key', 'created_at', 'status', 'guid'
   ]
 };
 
@@ -148,7 +163,10 @@ var TENANT_GEOFENCE = {
 };
 var AUTO_SESSION_WINDOW_MINUTES = 10;
 var AUTO_SESSION_SUBJECT = 'Automatic Attendance Session';
-var AUTH_SESSION_TTL_MINUTES = 480;
+var ACCESS_TOKEN_TTL_MINUTES = 15;
+var REFRESH_TOKEN_TTL_DAYS = 7;
+var AUTH_SESSION_TTL_MINUTES = 1440;
+var RATE_LIMIT_MAX_PER_MINUTE = 5;
 var PASSWORD_ITERATIONS = 12000;
 
 // ── Cache TTLs ────────────────────────────────────────────────
@@ -232,15 +250,70 @@ function route(b) {
   b = b || {};
   setRequestGuid(b.guid);
   ensureCoreTenantData();
+  var action = String(b.action || '').trim();
+  var rateLimitedActions = {
+    register: true,
+    registerUser: true,
+    signIn: true,
+    loginUser: true,
+    loginByBiometric: true,
+    refreshToken: true,
+    beginWebAuthnRegistration: true,
+    finishWebAuthnRegistration: true,
+    beginWebAuthnLogin: true,
+    finishWebAuthnLogin: true
+  };
+  if (rateLimitedActions[action]) {
+    var rl = checkRateLimit(makeRateLimitKey(action, b));
+    if (!rl.ok) return rl.error;
+    incrementRateLimit(makeRateLimitKey(action, b));
+  }
+  var publicActions = {
+    register: true,
+    registerUser: true,
+    signIn: true,
+    loginUser: true,
+    loginByBiometric: true,
+    refreshToken: true,
+    beginWebAuthnRegistration: true,
+    finishWebAuthnRegistration: true,
+    beginWebAuthnLogin: true,
+    finishWebAuthnLogin: true,
+    getOrgByGUID: true,
+    getRolesDepartments: true,
+    getRoles: true,
+    getDepartments: true,
+    getAttendanceTypes: true,
+    getLocations: true,
+    getAttendanceLocations: true,
+    debug: false
+  };
+  if (!publicActions[action]) {
+    var authCheck = validateToken(b);
+    if (!authCheck.ok) return authCheck.error;
+    var authz = authorize(authCheck.user, action, b);
+    if (!authz.ok) return authz.error;
+    if (authCheck.session && authCheck.session.guid) setRequestGuid(authCheck.session.guid);
+    b.authSession = authCheck.session;
+    b.authUser = authCheck.user;
+  }
   switch (b.action) {
     case 'register':              return registerUser(b);
     case 'registerUser':          return registerUser(b);
     case 'signIn':                return signInUser(b);
     case 'loginUser':             return signInUser(b);
+    case 'loginByBiometric':      return loginByBiometric(b);
+    case 'refreshToken':          return refreshAuthSession(b);
     case 'saveBiometric':         return saveBiometric(b);
     case 'getBiometric':          return getBiometric(b);
     case 'registerDevice':        return registerDevice(b);
     case 'checkDevice':           return checkDevice(b);
+    case 'logout':                return logoutUser(b);
+    case 'logoutUser':            return logoutUser(b);
+    case 'beginWebAuthnRegistration': return beginWebAuthnRegistration(b);
+    case 'finishWebAuthnRegistration': return finishWebAuthnRegistration(b);
+    case 'beginWebAuthnLogin':        return beginWebAuthnLogin(b);
+    case 'finishWebAuthnLogin':       return finishWebAuthnLogin(b);
 
     case 'markEntry':             return markEntry(b);
     case 'markAttendance':        return markEntry(b);
@@ -259,6 +332,14 @@ function route(b) {
 
     case 'getDashboard':          return getDashboard(b);
     case 'getStudents':           return getStudents(b);
+    case 'getLiveAttendance':     return getLiveAttendance(b);
+    case 'getLiveUpdates':        return getLiveUpdates(b);
+    case 'getUserLocations':      return getUserLocations(b);
+    case 'forceExitUser':         return forceExitUser(b);
+    case 'getDailyStats':         return getDailyStats(b);
+    case 'getWeeklyStats':        return getWeeklyStats(b);
+    case 'getUserAttendanceSummary': return getUserAttendanceSummary(b);
+    case 'getAttendanceInsights': return getAttendanceInsights(b);
 
     case 'getOrgByGUID':          return getOrgByGUID(b.guid);
     case 'getRolesDepartments':   return getRolesDepartments(b.guid);
@@ -331,8 +412,36 @@ function getCached(sheetName, ttl) {
   return rows;
 }
 
+function getCachedData(key, ttl) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var raw = cache.get(tenantScopedKey(String(key || '')));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedData(key, value, ttl) {
+  try {
+    CacheService.getScriptCache().put(
+      tenantScopedKey(String(key || '')),
+      JSON.stringify(value),
+      Math.max(1, parseInt(ttl, 10) || TTL_LOOKUP)
+    );
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function invalidate(sheetName) {
   try { CacheService.getScriptCache().remove(tenantScopedKey('rows_' + sheetName)); } catch(e) {}
+}
+
+function invalidateCachedData(key) {
+  try { CacheService.getScriptCache().remove(tenantScopedKey(String(key || ''))); } catch (e) {}
 }
 
 function buildMap(rows, key) {
@@ -357,6 +466,29 @@ function currentGuid() {
 
 function tenantScopedKey(key) {
   return currentGuid() + '__' + key;
+}
+
+function getLiveStateInfo() {
+  var state = getCachedData('live_state', 300) || {};
+  return {
+    version: String(state.version || '0'),
+    updatedAt: String(state.updatedAt || '')
+  };
+}
+
+function touchLiveState(reason) {
+  try {
+    var state = getLiveStateInfo();
+    var nextVersion = String((parseInt(state.version, 10) || 0) + 1);
+    setCachedData('live_state', {
+      version: nextVersion,
+      updatedAt: new Date().toISOString(),
+      reason: String(reason || '')
+    }, 300);
+    return nextVersion;
+  } catch (e) {
+    return '0';
+  }
 }
 
 function extractSpreadsheetId(url) {
@@ -719,57 +851,765 @@ function getWindowsConfig() {
 // ── Auth sessions ─────────────────────────────────────────────
 // auth_token stays as a random string (it's a token, not a pk used in joins)
 
-function createAuthSession(userId, roleName) {
-  var token = 'auth_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-  var createdAt = new Date();
-  var expiresAt = new Date(createdAt.getTime() + AUTH_SESSION_TTL_MINUTES * 60000);
-  getSheet(SH.AUTH_SESSIONS).appendRow([
-    token,
-    String(userId || ''),
-    String(roleName || ''),
-    createdAt.toISOString(),
-    expiresAt.toISOString(),
-    'active'
-  ]);
-  return { authToken: token, expiresAt: expiresAt.toISOString() };
+function authSessionHeaderIndex(headers, name) {
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim() === name) return i;
+  }
+  return -1;
 }
 
-function getAuthSession(token) {
-  if (!token) return null;
-  var rows = getRows(getSheet(SH.AUTH_SESSIONS));
+function rowToObject(row, headers) {
+  var obj = {};
+  headers.forEach(function(h, i) {
+    obj[String(h).trim()] = row[i];
+  });
+  return obj;
+}
+
+function getAuthSecret() {
+  var props = PropertiesService.getScriptProperties();
+  var secret = props.getProperty('AUTH_HMAC_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    props.setProperty('AUTH_HMAC_SECRET', secret);
+  }
+  return secret;
+}
+
+function base64UrlEncode(value) {
+  var bytes = value;
+  if (typeof value === 'string') bytes = Utilities.newBlob(value, 'application/json').getBytes();
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
+}
+
+function base64UrlDecodeToString(value) {
+  var padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (padded.length % 4) padded += '=';
+  return Utilities.newBlob(Utilities.base64Decode(padded)).getDataAsString();
+}
+
+function base64UrlDecodeToBytes(value) {
+  var padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (padded.length % 4) padded += '=';
+  return Utilities.base64Decode(padded);
+}
+
+function safeJsonParse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getRequestIpHint() {
+  try {
+    return String(Session.getActiveUser().getEmail() || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+function makeRateLimitKey(action, body) {
+  var who = String((body && (body.email || body.userId || body.user_id || body.deviceId || body.guid)) || '').trim();
+  if (!who) who = getRequestIpHint() || 'anon';
+  return currentGuid() + ':' + String(action || 'unknown') + ':' + who.toLowerCase();
+}
+
+function getRateLimitSheet() {
+  return getSheet(SH.RATE_LIMIT);
+}
+
+function checkRateLimit(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var now = new Date();
+    var windowStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
+    var cacheKey = tenantScopedKey('rl_' + key + '_' + windowStart.getTime());
+    var current = parseInt(cache.get(cacheKey) || '0', 10);
+    if (current >= RATE_LIMIT_MAX_PER_MINUTE) {
+      appendAuditLog('rate_limit_block', '', '', '', { key: key, count: current, windowStart: windowStart.toISOString() });
+      return { ok: false, error: { success: false, message: 'Too many requests. Please try again later.' } };
+    }
+    cache.put(cacheKey, String(current + 1), 120);
+    return { ok: true };
+  } catch (e) {
+    return { ok: true };
+  }
+}
+
+function incrementRateLimit(key) {
+  try {
+    var sheet = getRateLimitSheet();
+    var now = new Date();
+    var rows = getRows(sheet);
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].key) === String(key)) {
+        sheet.getRange(i + 2, 2).setValue(parseInt(rows[i].count || 0, 10) + 1);
+        sheet.getRange(i + 2, 3).setValue(now.toISOString());
+        return true;
+      }
+    }
+    sheet.appendRow([key, 1, now.toISOString(), now.toISOString()]);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tokenToBasePayload(payload) {
+  return {
+    user_id: String(payload.user_id || ''),
+    guid: String(payload.guid || currentGuid()),
+    role: String(payload.role || ''),
+    exp: parseInt(payload.exp, 10) || 0,
+    typ: String(payload.typ || 'access')
+  };
+}
+
+function signTokenPayload(payload) {
+  var header = { alg: 'HS256', typ: 'JWT' };
+  var encodedHeader = base64UrlEncode(JSON.stringify(header));
+  var encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  var signingInput = encodedHeader + '.' + encodedPayload;
+  var secretBytes = Utilities.newBlob(getAuthSecret()).getBytes();
+  var signatureBytes = Utilities.computeHmacSha256Signature(signingInput, secretBytes);
+  var encodedSignature = base64UrlEncode(signatureBytes);
+  return signingInput + '.' + encodedSignature;
+}
+
+function verifyToken(token) {
+  try {
+    var parts = String(token || '').split('.');
+    if (parts.length !== 3) return { ok: false, code: 'INVALID_TOKEN' };
+    var signingInput = parts[0] + '.' + parts[1];
+    var expected = base64UrlEncode(Utilities.computeHmacSha256Signature(signingInput, Utilities.newBlob(getAuthSecret()).getBytes()));
+    if (expected !== parts[2]) return { ok: false, code: 'SIGNATURE_MISMATCH' };
+    var payload = safeJsonParse(base64UrlDecodeToString(parts[1]));
+    if (!payload) return { ok: false, code: 'INVALID_PAYLOAD' };
+    var nowSeconds = Math.floor(Date.now() / 1000);
+    if (!payload.exp || nowSeconds >= parseInt(payload.exp, 10)) return { ok: false, code: 'TOKEN_EXPIRED', payload: payload };
+    return { ok: true, payload: tokenToBasePayload(payload) };
+  } catch (e) {
+    return { ok: false, code: 'INVALID_TOKEN' };
+  }
+}
+
+function generateToken(user, ttlMinutes, tokenType, guid) {
+  var exp = Math.floor((Date.now() + (ttlMinutes * 60000)) / 1000);
+  var payload = tokenToBasePayload({
+    user_id: user.user_id,
+    guid: normalizeGuid(guid || currentGuid()),
+    role: normalizeRoleValue(user.role_name || user.roleId || user.role_id || ''),
+    exp: exp,
+    typ: tokenType || 'access'
+  });
+  return signTokenPayload(payload);
+}
+
+function generateRefreshToken(user, guid) {
+  return generateToken(user, REFRESH_TOKEN_TTL_DAYS * 24 * 60, 'refresh', guid);
+}
+
+function generateAccessToken(user, guid) {
+  return generateToken(user, ACCESS_TOKEN_TTL_MINUTES, 'access', guid);
+}
+
+function ensureAuthSessionSchema() {
+  var sheet = getSheet(SH.AUTH_SESSIONS);
+  var desired = HEADERS.AuthSessions.slice();
+  var lastRow = sheet.getLastRow();
+  var lastCol = Math.max(sheet.getLastColumn(), desired.length);
+  var currentHeaders = lastRow >= 1
+    ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(v) { return String(v || '').trim(); })
+    : [];
+  var same = desired.length === currentHeaders.length;
+  if (same) {
+    for (var i = 0; i < desired.length; i++) {
+      if (currentHeaders[i] !== desired[i]) { same = false; break; }
+    }
+  }
+  if (same) return sheet;
+
+  var existing = lastRow >= 2
+    ? sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues()
+    : [];
+  var migrated = existing.map(function(row) {
+    var obj = rowToObject(row, currentHeaders.length ? currentHeaders : desired);
+    if (!obj.session_id && obj.token) obj.session_id = String(obj.token);
+    if (!obj.session_id && row[0]) obj.session_id = row[0];
+    if (!obj.token && row[0]) obj.token = row[0];
+    if (!obj.refresh_token) obj.refresh_token = '';
+    if (!obj.device_id) obj.device_id = '';
+    if (!obj.created_at && row[3]) obj.created_at = row[3];
+    if (!obj.expires_at && row[4]) obj.expires_at = row[4];
+    if (!obj.refresh_expires_at) obj.refresh_expires_at = obj.expires_at || row[4] || '';
+    if (!obj.status && row[5]) obj.status = row[5];
+    if (!obj.guid) obj.guid = currentGuid();
+    if (!obj.role_name && row[2]) obj.role_name = row[2];
+    if (!obj.last_seen_at) obj.last_seen_at = obj.created_at || '';
+    return desired.map(function(h) {
+      return typeof obj[h] === 'undefined' ? '' : obj[h];
+    });
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, desired.length).setValues([desired]);
+  if (migrated.length) {
+    sheet.getRange(2, 1, migrated.length, desired.length).setValues(migrated);
+  }
+  sheet.setFrozenRows(1);
+  invalidate(SH.AUTH_SESSIONS);
+  return sheet;
+}
+
+function getAuthSessionSheet() {
+  return ensureAuthSessionSchema();
+}
+
+function createAuthSession(userId, roleName, deviceId, guid) {
+  var sessionId = 'sess_' + Utilities.getUuid().replace(/-/g, '');
+  var createdAt = new Date();
+  var accessUser = {
+    user_id: userId,
+    role_name: roleName,
+    roleId: roleName,
+    role_id: roleName
+  };
+  var token = generateAccessToken(accessUser, guid);
+  var refreshToken = generateRefreshToken(accessUser, guid);
+  var expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MINUTES * 60000);
+  var refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60000);
+  getAuthSessionSheet().appendRow([
+    sessionId,
+    String(userId || ''),
+    token,
+    refreshToken,
+    String(deviceId || ''),
+    createdAt.toISOString(),
+    expiresAt.toISOString(),
+    refreshExpiresAt.toISOString(),
+    'ACTIVE',
+    normalizeGuid(guid || currentGuid()),
+    String(roleName || ''),
+    createdAt.toISOString()
+  ]);
+  return {
+    authToken: token,
+    refreshToken: refreshToken,
+    sessionId: sessionId,
+    expiresAt: expiresAt.toISOString(),
+    refreshExpiresAt: refreshExpiresAt.toISOString()
+  };
+}
+
+function findAuthSessionRow(token) {
+  var sheet = getAuthSessionSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var tokenIdx = authSessionHeaderIndex(headers, 'token');
+  if (tokenIdx < 0) tokenIdx = authSessionHeaderIndex(headers, 'auth_token');
+  if (tokenIdx < 0) return null;
+  var rows = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   for (var i = rows.length - 1; i >= 0; i--) {
-    if (String(rows[i].auth_token) !== String(token)) continue;
-    if (String(rows[i].status) !== 'active') return null;
-    var exp = new Date(rows[i].expires_at);
-    if (isNaN(exp.getTime()) || exp.getTime() < Date.now()) return null;
-    return rows[i];
+    if (String(rows[i][tokenIdx]) !== String(token)) continue;
+    return { sheet: sheet, headers: headers, row: rows[i], rowIndex: i + 2 };
   }
   return null;
 }
 
-function requireAuth(b, allowedRoles) {
-  var session = getAuthSession(b && b.authToken);
-  if (!session) return { ok: false, error: { success: false, message: 'Authentication required' } };
-  if (allowedRoles && allowedRoles.length && allowedRoles.indexOf(String(session.role_name)) < 0) {
-    return { ok: false, error: { success: false, message: 'Access denied' } };
+function findRefreshSessionRow(refreshToken) {
+  var sheet = getAuthSessionSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var refreshIdx = authSessionHeaderIndex(headers, 'refresh_token');
+  if (refreshIdx < 0) return null;
+  var rows = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][refreshIdx]) !== String(refreshToken)) continue;
+    return { sheet: sheet, headers: headers, row: rows[i], rowIndex: i + 2 };
   }
-  return { ok: true, session: session };
+  return null;
+}
+
+function getAuthSession(token) {
+  if (!token) return null;
+  var found = findAuthSessionRow(token);
+  if (!found) return null;
+  var session = rowToObject(found.row, found.headers);
+  var status = String(session.status || '').trim().toUpperCase();
+  var payloadCheck = verifyToken(token);
+  var exp = new Date(session.expires_at || session.expiresAt || '');
+  if (status !== 'ACTIVE' || isNaN(exp.getTime()) || exp.getTime() < Date.now() || !payloadCheck.ok) {
+    try {
+      var statusIdx = authSessionHeaderIndex(found.headers, 'status');
+      if (statusIdx >= 0) found.sheet.getRange(found.rowIndex, statusIdx + 1).setValue('EXPIRED');
+      invalidate(SH.AUTH_SESSIONS);
+    } catch (e) {}
+    return null;
+  }
+  return session;
+}
+
+function touchAuthSession(token) {
+  try {
+    if (!token) return;
+    var cache = CacheService.getScriptCache();
+    var touchKey = tenantScopedKey('auth_touch_' + token);
+    var lastTouch = parseInt(cache.get(touchKey) || '0', 10);
+    if (lastTouch && (Date.now() - lastTouch) < 300000) return;
+    var found = findAuthSessionRow(token);
+    if (!found) return;
+    var lastSeenIdx = authSessionHeaderIndex(found.headers, 'last_seen_at');
+    if (lastSeenIdx >= 0) {
+      found.sheet.getRange(found.rowIndex, lastSeenIdx + 1).setValue(new Date().toISOString());
+      cache.put(touchKey, String(Date.now()), 300);
+      invalidate(SH.AUTH_SESSIONS);
+    }
+  } catch (e) {}
+}
+
+function expireAuthSession(token) {
+  try {
+    var found = findAuthSessionRow(token);
+    if (!found) return false;
+    var statusIdx = authSessionHeaderIndex(found.headers, 'status');
+    if (statusIdx >= 0) found.sheet.getRange(found.rowIndex, statusIdx + 1).setValue('EXPIRED');
+    var cache = CacheService.getScriptCache();
+    cache.remove(tenantScopedKey('auth_touch_' + token));
+    invalidate(SH.AUTH_SESSIONS);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function validateToken(b) {
+  var token = String((b && (b.authToken || b.token)) || '').trim();
+  if (!token) return { ok: false, error: { success: false, message: 'Unauthorized' } };
+  var signed = verifyToken(token);
+  if (!signed.ok) {
+    return { ok: false, error: { success: false, code: signed.code || 'TOKEN_INVALID', message: 'Unauthorized' } };
+  }
+  var session = getAuthSession(token);
+  if (!session) return { ok: false, error: { success: false, message: 'Unauthorized' } };
+  var user = getUserById(session.user_id);
+  if (!user) return { ok: false, error: { success: false, message: 'Unauthorized' } };
+  var requestGuid = normalizeGuid((b && b.guid) || currentGuid());
+  if (session.guid && normalizeGuid(session.guid) !== requestGuid) {
+    return { ok: false, error: { success: false, message: 'Unauthorized' } };
+  }
+  touchAuthSession(token);
+  return { ok: true, session: session, user: user, tokenPayload: signed.payload };
+}
+
+function authorize(user, action, body) {
+  var roleName = normalizeRoleValue(user && (user.role_name || user.roleId || user.role_id || ''));
+  if (roleName === 'admin') return { ok: true };
+
+  var actionName = String(action || '').trim();
+  var bodyUserId = String((body && (body.userId || body.user_id)) || '').trim();
+
+  var selfOnlyActions = {
+    markEntry: true,
+    markAttendance: true,
+    markExit: true,
+    exitAttendance: true,
+    trackLocation: true,
+    trackStudentLocation: true,
+    getMyAttendance: true,
+    registerDevice: true,
+    checkDevice: true
+  };
+  if (selfOnlyActions[actionName]) {
+    if (!bodyUserId || String(user.user_id) !== bodyUserId) {
+      return { ok: false, error: { success: false, message: 'Unauthorized' } };
+    }
+    return { ok: true };
+  }
+
+  var teacherActions = {
+    createSession: true,
+    closeSession: true,
+    getActiveSession: true,
+    getSessions: true,
+    getTeacherNotifications: true,
+    getDashboard: true,
+    getStudents: true,
+    exportAttendance: true,
+    getLiveAttendance: true,
+    getLiveUpdates: true,
+    getUserLocations: true,
+    forceExitUser: true,
+    getDailyStats: true,
+    getWeeklyStats: true,
+    getUserAttendanceSummary: true,
+    getAttendanceInsights: true
+  };
+  if (teacherActions[actionName]) {
+    return roleName === 'teacher' || roleName === 'admin'
+      ? { ok: true }
+      : { ok: false, error: { success: false, message: 'Unauthorized' } };
+  }
+
+  var adminActions = {
+    addDepartment: true,
+    addAttendanceLocation: true,
+    addUserLocMap: true,
+    setupSheets: true,
+    resetUsersSheet: true,
+    debug: true
+  };
+  if (adminActions[actionName]) {
+    return roleName === 'admin'
+      ? { ok: true }
+      : { ok: false, error: { success: false, message: 'Unauthorized' } };
+  }
+
+  return { ok: true };
+}
+
+function requireAuth(b, allowedRoles) {
+  var result = validateToken(b);
+  if (!result.ok) return { ok: false, error: result.error };
+  if (allowedRoles && allowedRoles.length && allowedRoles.indexOf(normalizeRoleValue(result.session.role_name)) < 0) {
+    return { ok: false, error: { success: false, message: 'Unauthorized' } };
+  }
+  return { ok: true, session: result.session, user: result.user };
 }
 
 function appendAuditLog(eventType, actorUserId, actorRole, targetUserId, details) {
   try {
     var auditId = nextId(SH.AUDIT_LOG);
+    var metadata = details || {};
+    if (typeof metadata === 'object' && metadata && !metadata.guid) {
+      metadata.guid = currentGuid();
+    }
     getSheet(SH.AUDIT_LOG).appendRow([
       auditId,
       String(eventType || ''),
       String(actorUserId || ''),
       String(actorRole || ''),
       String(targetUserId || ''),
-      JSON.stringify(details || {}),
+      JSON.stringify(metadata || {}),
       '',
       new Date().toISOString()
     ]);
   } catch(e) {}
+}
+
+function logoutUser(b) {
+  try {
+    var auth = validateToken(b);
+    if (!auth.ok) return auth.error;
+    expireAuthSession(b.authToken || b.token);
+    appendAuditLog('logout', auth.session.user_id, normalizeRoleValue(auth.session.role_name), auth.session.user_id, {
+      deviceId: String(auth.session.device_id || ''),
+      sessionId: String(auth.session.session_id || '')
+    });
+    return { success: true, message: 'Logged out successfully' };
+  } catch (err) {
+    return { success: false, message: 'logout: ' + err };
+  }
+}
+
+function webauthnChallengeSheet() {
+  return getSheet(SH.WEBAUTHN);
+}
+
+function webauthnCredentialSheet() {
+  return getSheet(SH.WEBAUTHN_CRED);
+}
+
+function createWebAuthnChallenge(userId, action, metadata) {
+  var challengeId = 'wch_' + Utilities.getUuid().replace(/-/g, '');
+  var challengeBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, challengeId + '|' + Date.now() + '|' + Math.random(), Utilities.Charset.UTF_8);
+  var challenge = base64UrlEncode(challengeBytes);
+  var createdAt = new Date();
+  var expiresAt = new Date(Date.now() + 5 * 60000);
+  webauthnChallengeSheet().appendRow([
+    challengeId,
+    String(userId || ''),
+    String(action || ''),
+    challenge,
+    createdAt.toISOString(),
+    expiresAt.toISOString(),
+    'ACTIVE',
+    JSON.stringify(metadata || {})
+  ]);
+  return {
+    challengeId: challengeId,
+    challenge: challenge,
+    expiresAt: expiresAt.toISOString()
+  };
+}
+
+function verifyWebAuthnClientData(clientDataJSON, expectedChallenge, expectedType) {
+  try {
+    if (!clientDataJSON) return { ok: false };
+    var raw = base64UrlDecodeToString(clientDataJSON);
+    var parsed = safeJsonParse(raw);
+    if (!parsed) return { ok: false };
+    if (String(parsed.type || '') !== String(expectedType || '')) return { ok: false };
+    if (String(parsed.challenge || '') !== String(expectedChallenge || '')) return { ok: false };
+    return { ok: true, parsed: parsed };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
+function findWebAuthnChallenge(challengeId) {
+  var sheet = webauthnChallengeSheet();
+  var rows = getRows(sheet);
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i].challenge_id) === String(challengeId)) {
+      return { row: rows[i], rowIndex: i + 2, sheet: sheet };
+    }
+  }
+  return null;
+}
+
+function verifyWebAuthnChallenge(challengeId, expectedAction, userId, providedChallenge, credentialId) {
+  var found = findWebAuthnChallenge(challengeId);
+  if (!found) return { ok: false, message: 'Unauthorized' };
+  var row = found.row;
+  var exp = new Date(row.expires_at || '');
+  if (String(row.status || '').toUpperCase() !== 'ACTIVE' || isNaN(exp.getTime()) || exp.getTime() < Date.now()) {
+    return { ok: false, message: 'Unauthorized' };
+  }
+  if (String(row.action || '') !== String(expectedAction || '')) return { ok: false, message: 'Unauthorized' };
+  if (String(row.user_id || '') && String(row.user_id || '') !== String(userId || '')) return { ok: false, message: 'Unauthorized' };
+  if (providedChallenge && String(row.challenge || '') !== String(providedChallenge || '')) return { ok: false, message: 'Unauthorized' };
+  if (credentialId && String(row.metadata || '').indexOf(String(credentialId)) < 0) {
+    // metadata is informational; credential binding is validated elsewhere
+  }
+  try {
+    found.sheet.getRange(found.rowIndex, 7).setValue('USED');
+  } catch (e) {}
+  return { ok: true, row: row };
+}
+
+function beginWebAuthnRegistration(b) {
+  try {
+    var email = String(b.email || '').trim().toLowerCase();
+    var name = String(b.name || '').trim();
+    if (!email || !name) return { success: false, message: 'email and name required' };
+    var challenge = createWebAuthnChallenge(email, 'register', { name: name, guid: currentGuid() });
+    appendAuditLog('webauthn_register_begin', '', '', '', { email: email, challengeId: challenge.challengeId });
+    return {
+      success: true,
+      challengeId: challenge.challengeId,
+      challenge: challenge.challenge,
+      expiresAt: challenge.expiresAt
+    };
+  } catch (err) {
+    return { success: false, message: 'beginWebAuthnRegistration: ' + err };
+  }
+}
+
+function finishWebAuthnRegistration(b) {
+  try {
+    var email = String(b.email || '').trim().toLowerCase();
+    var name = String(b.name || '').trim();
+    var challengeId = String(b.challengeId || '').trim();
+    var credentialId = String(b.credentialId || '').trim();
+    var publicKey = String(b.publicKey || '').trim();
+    var clientChallenge = String(b.challenge || '').trim();
+    if (!email || !name || !challengeId || !credentialId || !publicKey) {
+      return { success: false, message: 'Missing registration data' };
+    }
+    var challengeCheck = verifyWebAuthnChallenge(challengeId, 'register', email, clientChallenge, credentialId);
+    if (!challengeCheck.ok) return { success: false, message: 'Unauthorized' };
+    var clientCheck = verifyWebAuthnClientData(b.clientDataJSON, clientChallenge, 'webauthn.create');
+    if (!clientCheck.ok) return { success: false, message: 'Unauthorized' };
+
+    var user = getUserByEmail(email);
+    if (!user) return { success: false, message: 'User not found' };
+    var sheet = webauthnCredentialSheet();
+    sheet.appendRow([
+      credentialId,
+      String(user.user_id || ''),
+      publicKey,
+      new Date().toISOString(),
+      'ACTIVE',
+      currentGuid()
+    ]);
+    var usersSheet = getSheet(SH.USERS);
+    var last = usersSheet.getLastRow();
+    for (var i = 2; i <= last; i++) {
+      if (String(usersSheet.getRange(i, 8).getValue()).toLowerCase() === email) {
+        usersSheet.getRange(i, 10).setValue(credentialId);
+        break;
+      }
+    }
+    invalidate(SH.USERS);
+    appendAuditLog('webauthn_register_complete', user.user_id, normalizeRoleValue(user.role_id), user.user_id, {
+      credentialId: credentialId
+    });
+    return { success: true, credentialId: credentialId, userId: user.user_id };
+  } catch (err) {
+    return { success: false, message: 'finishWebAuthnRegistration: ' + err };
+  }
+}
+
+function beginWebAuthnLogin(b) {
+  try {
+    var email = String(b.email || '').trim().toLowerCase();
+    if (!email) return { success: false, message: 'email required' };
+    var user = getUserByEmail(email);
+    if (!user) return { success: false, message: 'No account found for this email' };
+    var credRows = getRows(webauthnCredentialSheet()).filter(function(r) {
+      return String(r.user_id) === String(user.user_id) && String(r.status || '').toUpperCase() === 'ACTIVE';
+    });
+    if (!credRows.length && !user.biometric_code) {
+      return { success: false, message: 'No biometric registered for this account' };
+    }
+    var challenge = createWebAuthnChallenge(user.user_id, 'login', {
+      email: email,
+      credentialId: String(user.biometric_code || (credRows[0] && credRows[0].credential_id) || ''),
+      guid: currentGuid()
+    });
+    appendAuditLog('webauthn_login_begin', user.user_id, normalizeRoleValue(user.role_id), user.user_id, {
+      challengeId: challenge.challengeId
+    });
+    return {
+      success: true,
+      challengeId: challenge.challengeId,
+      challenge: challenge.challenge,
+      credentialId: String(user.biometric_code || (credRows[0] && credRows[0].credential_id) || ''),
+      userId: user.user_id,
+      name: user.full_name,
+      roleId: normalizeRoleValue(user.role_id),
+      roleKey: normalizeRoleValue(user.role_id)
+    };
+  } catch (err) {
+    return { success: false, message: 'beginWebAuthnLogin: ' + err };
+  }
+}
+
+function finishWebAuthnLogin(b) {
+  try {
+    var email = String(b.email || '').trim().toLowerCase();
+    var challengeId = String(b.challengeId || '').trim();
+    var providedChallenge = String(b.challenge || '').trim();
+    var credentialId = String(b.credentialId || '').trim();
+    var publicKey = String(b.publicKey || '').trim();
+    if (!email || !challengeId || !credentialId) {
+      return { success: false, message: 'Missing login data' };
+    }
+    var user = getUserByEmail(email);
+    if (!user) return { success: false, message: 'No account found for this email' };
+    var challengeCheck = verifyWebAuthnChallenge(challengeId, 'login', user.user_id, providedChallenge, credentialId);
+    if (!challengeCheck.ok) return { success: false, message: 'Unauthorized' };
+    var clientCheck = verifyWebAuthnClientData(b.clientDataJSON, providedChallenge, 'webauthn.get');
+    if (!clientCheck.ok) return { success: false, message: 'Unauthorized' };
+    var credRows = getRows(webauthnCredentialSheet());
+    var matched = false;
+    for (var i = 0; i < credRows.length; i++) {
+      if (String(credRows[i].credential_id) === credentialId &&
+          String(credRows[i].user_id) === String(user.user_id) &&
+          String(credRows[i].status || '').toUpperCase() === 'ACTIVE') {
+        matched = true;
+        if (publicKey && !String(credRows[i].public_key || '')) {
+          try {
+            webauthnCredentialSheet().getRange(i + 2, 3).setValue(publicKey);
+          } catch (e) {}
+        }
+        break;
+      }
+    }
+    if (!matched && String(user.biometric_code || '') !== credentialId) {
+      return { success: false, message: 'Unauthorized' };
+    }
+
+    var deviceId = String(b.deviceId || b.device_id || '').trim();
+    var roleName = normalizeRoleValue(user.role_id);
+    var auth = createAuthSession(user.user_id, roleName || String(user.role_id || ''), deviceId, currentGuid());
+    appendAuditLog('webauthn_login_complete', user.user_id, roleName, user.user_id, {
+      credentialId: credentialId,
+      deviceId: deviceId
+    });
+    return {
+      success: true,
+      userId: user.user_id,
+      name: user.full_name,
+      roleId: roleName,
+      roleKey: roleName,
+      roleDbId: String(user.role_id || ''),
+      deptId: user.department_id,
+      authToken: auth.authToken,
+      refreshToken: auth.refreshToken,
+      authExpiresAt: auth.expiresAt,
+      refreshExpiresAt: auth.refreshExpiresAt,
+      sessionId: auth.sessionId,
+      deviceId: deviceId || String(user.device_identification || ''),
+      guid: currentGuid()
+    };
+  } catch (err) {
+    return { success: false, message: 'finishWebAuthnLogin: ' + err };
+  }
+}
+
+function refreshAuthSession(b) {
+  try {
+    var refreshToken = String((b && (b.refreshToken || b.refresh_token)) || '').trim();
+    if (!refreshToken) return { success: false, message: 'Unauthorized' };
+    var found = findRefreshSessionRow(refreshToken);
+    if (!found) return { success: false, message: 'Unauthorized' };
+    var session = rowToObject(found.row, found.headers);
+    var status = String(session.status || '').trim().toUpperCase();
+    var refreshExp = new Date(session.refresh_expires_at || session.expires_at || '');
+    if (status !== 'ACTIVE' || isNaN(refreshExp.getTime()) || refreshExp.getTime() < Date.now()) {
+      var sIdx = authSessionHeaderIndex(found.headers, 'status');
+      if (sIdx >= 0) found.sheet.getRange(found.rowIndex, sIdx + 1).setValue('EXPIRED');
+      invalidate(SH.AUTH_SESSIONS);
+      return { success: false, message: 'Unauthorized' };
+    }
+
+    var user = getUserById(session.user_id);
+    if (!user) return { success: false, message: 'Unauthorized' };
+    var roleName = normalizeRoleValue(user.role_id);
+    var newAccess = generateAccessToken({ user_id: user.user_id, role_name: roleName }, session.guid);
+    var newRefresh = generateRefreshToken({ user_id: user.user_id, role_name: roleName }, session.guid);
+    var expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MINUTES * 60000).toISOString();
+    var refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60000).toISOString();
+
+    var tokenIdx = authSessionHeaderIndex(found.headers, 'token');
+    var refreshIdx = authSessionHeaderIndex(found.headers, 'refresh_token');
+    var expiresIdx = authSessionHeaderIndex(found.headers, 'expires_at');
+    var refreshExpIdx = authSessionHeaderIndex(found.headers, 'refresh_expires_at');
+    var lastSeenIdx = authSessionHeaderIndex(found.headers, 'last_seen_at');
+    if (tokenIdx >= 0) found.sheet.getRange(found.rowIndex, tokenIdx + 1).setValue(newAccess);
+    if (refreshIdx >= 0) found.sheet.getRange(found.rowIndex, refreshIdx + 1).setValue(newRefresh);
+    if (expiresIdx >= 0) found.sheet.getRange(found.rowIndex, expiresIdx + 1).setValue(expiresAt);
+    if (refreshExpIdx >= 0) found.sheet.getRange(found.rowIndex, refreshExpIdx + 1).setValue(refreshExpiresAt);
+    if (lastSeenIdx >= 0) found.sheet.getRange(found.rowIndex, lastSeenIdx + 1).setValue(new Date().toISOString());
+    invalidate(SH.AUTH_SESSIONS);
+    appendAuditLog('refresh_token', user.user_id, roleName, user.user_id, {
+      sessionId: String(session.session_id || ''),
+      deviceId: String(session.device_id || '')
+    });
+    return {
+      success: true,
+      authToken: newAccess,
+      refreshToken: newRefresh,
+      authExpiresAt: expiresAt,
+      refreshExpiresAt: refreshExpiresAt,
+      userId: user.user_id,
+      name: user.full_name,
+      roleId: roleName,
+      roleKey: roleName,
+      roleDbId: String(user.role_id || ''),
+      deptId: user.department_id,
+      sessionId: String(session.session_id || ''),
+      deviceId: String(session.device_id || ''),
+      guid: String(session.guid || currentGuid())
+    };
+  } catch (err) {
+    return { success: false, message: 'refreshToken: ' + err };
+  }
 }
 
 function pushTeacherNotification(notification) {
@@ -842,6 +1682,7 @@ function saveLocation(userId, lat, lng, distance) {
   var now = new Date();
   var lmId = nextId(SH.LOC_MONITOR);   // â† integer
   getSheet(SH.LOC_MONITOR).appendRow([lmId, userId, lat, lng, distance, now.toISOString()]);
+  touchLiveState('location_write');
   return lmId;
 }
 
@@ -1012,8 +1853,20 @@ function signInUser(b) {
       user = getUserByEmail(b.email) || user;
     }
     var roleName = normalizeRoleValue(user.role_id);
-    var auth = createAuthSession(user.user_id, roleName || String(user.role_id || ''));
-    appendAuditLog('sign_in', user.user_id, roleName, user.user_id, { email: String(user.email || '') });
+    var deviceId = String(b.deviceId || b.device_id || '').trim();
+    var storedDevice = String(user.device_identification || '').trim();
+    if (storedDevice && deviceId && storedDevice !== deviceId) {
+      appendAuditLog('new_device_login', user.user_id, roleName, user.user_id, {
+        email: String(user.email || ''),
+        storedDeviceId: storedDevice,
+        deviceId: deviceId
+      });
+    }
+    var auth = createAuthSession(user.user_id, roleName || String(user.role_id || ''), deviceId, currentGuid());
+    appendAuditLog('sign_in', user.user_id, roleName, user.user_id, {
+      email: String(user.email || ''),
+      deviceId: deviceId || storedDevice || ''
+    });
     return {
       success:   true,
       userId:    user.user_id,
@@ -1023,9 +1876,22 @@ function signInUser(b) {
       roleDbId:  String(user.role_id || ''),
       deptId:    user.department_id,
       authToken: auth.authToken,
-      authExpiresAt: auth.expiresAt
+      refreshToken: auth.refreshToken,
+      authExpiresAt: auth.expiresAt,
+      refreshExpiresAt: auth.refreshExpiresAt,
+      sessionId: auth.sessionId,
+      deviceId: deviceId || storedDevice || '',
+      guid: currentGuid()
     };
   } catch(err) { return { success: false, message: 'signIn: ' + err }; }
+}
+
+function loginByBiometric(b) {
+  try {
+    return { success: false, message: 'Deprecated. Use beginWebAuthnLogin/finishWebAuthnLogin.' };
+  } catch (err) {
+    return { success: false, message: 'loginByBiometric: ' + err };
+  }
 }
 
 // ============================================================
@@ -1133,6 +1999,7 @@ function markEntry(b) {
 
       SpreadsheetApp.flush();
       invalidate(SH.ATTENDANCE);
+      touchLiveState('mark_entry');
 
       var activeSession = getOpenSessionForToday();
       if (activeSession) {
@@ -1221,6 +2088,7 @@ function markExit(b) {
         }
         SpreadsheetApp.flush();
         invalidate(SH.ATTENDANCE);
+        touchLiveState('mark_exit');
       } finally { lock.releaseLock(); }
 
       appendAuditLog('mark_exit', b.userId, '', b.userId, { time: timeStr, date: dateStr, distance: xdist });
@@ -1316,6 +2184,7 @@ function trackLocation(b) {
       if (!exitMarked && exitResult && /No entry record found/i.test(String(exitResult.message || ''))) {
         exitMarked = true;
       }
+      if (exitMarked) touchLiveState('auto_exit');
     }
 
     return { success: true, distance: distance, exitMarked: exitMarked };
@@ -1335,6 +2204,7 @@ function trackStudentLocation(b) {
     var dist = haversine(lat, lng, track.anchorLat, track.anchorLng);
     var lmId = nextId(SH.LOC_MONITOR);   // ← integer
     getSheet(SH.LOC_MONITOR).appendRow([lmId, b.userId, lat, lng, dist, now.toISOString()]);
+    touchLiveState('track_student_location');
     return { success: true, message: 'Location tracked', distanceFromCentre: dist,
              attendanceLocationId: track.attendanceLocationId };
   } catch(err) { return { success: false, message: 'trackStudentLocation: ' + err }; }
@@ -1408,6 +2278,7 @@ function createSession(b) {
     }), TTL_SESSION);
     appendAuditLog('create_session', auth.session.user_id, auth.session.role_name, '',
       { sessionId: sessId, subject: b.subject });
+    touchLiveState('create_session');
     return { success: true, sessionId: sessId, subject: b.subject, startTime: start, endTime: end };
   } catch(err) { return { success: false, message: 'createSession: ' + err }; }
 }
@@ -1424,6 +2295,7 @@ function closeSession(b) {
         sheet.getRange(i+1, 8).setValue('closed');
         CacheService.getScriptCache().remove(tenantScopedKey('active_session'));
         appendAuditLog('close_session', auth.session.user_id, auth.session.role_name, '', { sessionId: b.sessionId });
+        touchLiveState('close_session');
         return { success: true };
       }
     }
@@ -1575,6 +2447,696 @@ function getDashboard(b) {
     try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), TTL_DASH); } catch(e) {}
     return result;
   } catch(err) { return { success: false, message: 'getDashboard: ' + err }; }
+}
+
+function resolveLiveSessionContext(b) {
+  var sessionId = String((b && (b.sessionId || b.session_id)) || '').trim();
+  if (!sessionId) {
+    var active = getActiveSession({});
+    if (active && active.active && active.session) {
+      sessionId = String(active.session.session_id || '');
+    }
+  }
+  if (!sessionId) {
+    var autoSession = getCurrentAutoSession(new Date());
+    if (autoSession) sessionId = String(autoSession.session_id || '');
+  }
+  var sessionRow = null;
+  if (sessionId) {
+    var rows = getRows(getSheet(SH.SESSIONS));
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (String(rows[i].session_id) === sessionId) { sessionRow = rows[i]; break; }
+    }
+    if (!sessionRow) {
+      var auto = getCurrentAutoSession(new Date());
+      if (auto && String(auto.session_id) === sessionId) sessionRow = auto;
+    }
+  }
+  if (!sessionRow) {
+    var fallback = getCurrentAutoSession(new Date());
+    if (fallback) {
+      sessionRow = fallback;
+      sessionId = String(fallback.session_id || '');
+    }
+  }
+  return { sessionId: sessionId, session: sessionRow };
+}
+
+function latestAuthSessionsByUser() {
+  var rows = getRows(getAuthSessionSheet());
+  var map = {};
+  rows.forEach(function(r) {
+    var uid = String(r.user_id || '').trim();
+    if (!uid) return;
+    var status = String(r.status || '').trim().toUpperCase();
+    var exp = new Date(r.expires_at || r.refresh_expires_at || '');
+    if (status !== 'ACTIVE' || isNaN(exp.getTime()) || exp.getTime() < Date.now()) return;
+    var existing = map[uid];
+    if (!existing) {
+      map[uid] = r;
+      return;
+    }
+    var current = new Date(existing.last_seen_at || existing.created_at || 0).getTime();
+    var incoming = new Date(r.last_seen_at || r.created_at || 0).getTime();
+    if (incoming >= current) map[uid] = r;
+  });
+  return map;
+}
+
+function latestAttendanceByUser(sessionId) {
+  var sheet = getSheet(SH.ATTENDANCE);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  var cols = attendanceReadColumnCount(sheet);
+  var data = sheet.getRange(2, 1, lastRow - 1, cols).getValues();
+  var map = {};
+  var t = tz();
+  var sessionCtx = resolveLiveSessionContext({ sessionId: sessionId });
+  var sessionRow = sessionCtx.session || null;
+  data.forEach(function(row) {
+    var uid = String(row[1] || '').trim();
+    if (!uid) return;
+    if (sessionRow && !attendanceMatchesSession(row, sessionRow, t)) return;
+    var existing = map[uid];
+    var currentTime = String(row[5] || row[4] || '');
+    var currentSort = (normDate(row[6], t) || '') + 'T' + currentTime;
+    if (!existing) {
+      map[uid] = row;
+      map[uid]._sort = currentSort;
+      return;
+    }
+    if (currentSort >= (existing._sort || '')) {
+      row._sort = currentSort;
+      map[uid] = row;
+    }
+  });
+  return map;
+}
+
+function attendanceMatchesSession(row, sessionRow, tzName) {
+  try {
+    if (!sessionRow) return true;
+    var rowDate = normDate(row[6], tzName || tz());
+    var sessionDate = normDate(sessionRow.date || sessionRow.start_time || '', tzName || tz());
+    if (sessionDate && rowDate && sessionDate !== rowDate) return false;
+    var entryTime = String(row[4] || '').trim();
+    if (!entryTime) return true;
+    var startTime = String(sessionRow.start_time || '').trim();
+    var endTime = String(sessionRow.end_time || '').trim();
+    if (!startTime || !endTime) return true;
+    var entryDt = new Date((sessionDate || rowDate) + 'T' + entryTime);
+    var startDt = new Date((sessionDate || rowDate) + 'T' + startTime);
+    var endDt = new Date((sessionDate || rowDate) + 'T' + endTime);
+    if (isNaN(entryDt.getTime()) || isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return true;
+    return entryDt >= startDt && entryDt <= endDt;
+  } catch (e) {
+    return true;
+  }
+}
+
+function latestLocationsByUser() {
+  var sheet = getSheet(SH.LOC_MONITOR);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var map = {};
+  data.forEach(function(row) {
+    var uid = String(row[1] || '').trim();
+    if (!uid) return;
+    var existing = map[uid];
+    var currentTs = new Date(row[5] || 0).getTime();
+    if (!existing || currentTs >= new Date(existing.timestamp || 0).getTime()) {
+      map[uid] = {
+        locationMonitorId: row[0] || '',
+        userId: uid,
+        latitude: row[2] || '',
+        longitude: row[3] || '',
+        distanceFromCentre: row[4] || '',
+        timestamp: row[5] || ''
+      };
+    }
+  });
+  return map;
+}
+
+function liveCacheKey(action, sessionId, extra) {
+  return tenantScopedKey('live_' + action + '_' + String(sessionId || 'all') + '_' + String(extra || ''));
+}
+
+function getLiveAttendance(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var liveCtx = resolveLiveSessionContext(b);
+    var sessionId = liveCtx.sessionId || '';
+    if (!sessionId) return { success: true, totalIn: 0, totalOut: 0, activeUsers: [], offlineUsers: [], recentlyExited: [], sessionId: '' };
+
+    var liveState = getLiveStateInfo();
+    var cacheKey = liveCacheKey('attendance', sessionId, liveState.version);
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    var t = tz();
+    var now = new Date();
+    var sessionRow = liveCtx.session || null;
+    var sessionUsers = getCached(SH.USERS, TTL_LOOKUP).filter(function(u) {
+      return normalizeRoleValue(u.role_id) === 'student' || String(findRoleIdByName('student')) === String(u.role_id);
+    });
+    var attendanceMap = latestAttendanceByUser(sessionId);
+    var locationMap = latestLocationsByUser();
+    var authMap = latestAuthSessionsByUser();
+    var activeUsers = [];
+    var offlineUsers = [];
+    var recentlyExited = [];
+    var totalIn = 0;
+    var totalOut = 0;
+    sessionUsers.forEach(function(u) {
+      var uid = String(u.user_id || '').trim();
+      var att = attendanceMap[uid] || null;
+      var authRow = authMap[uid] || null;
+      var lastSeenAt = authRow ? String(authRow.last_seen_at || authRow.created_at || '') : '';
+      var lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+      var isOnline = !!(lastSeenMs && (now.getTime() - lastSeenMs) <= 120000);
+      var isIn = att && (String(att[3]).trim() === 'entry' || String(att[13] || '').toUpperCase() === 'IN') && !String(att[5] || '').trim();
+      var isOut = att && (String(att[3]).trim() === 'exit' || String(att[13] || '').toUpperCase() === 'OUT' || String(att[5] || '').trim());
+      var loc = locationMap[uid] || null;
+      var base = {
+        userId: uid,
+        name: u.full_name,
+        email: u.email,
+        department: u.department_id,
+        status: isIn ? 'IN' : (isOut ? 'OUT' : 'UNKNOWN'),
+        online: isOnline,
+        lastSeenAt: lastSeenAt || '',
+        entryTime: att ? (att[4] || '') : '',
+        exitTime: att ? (att[5] || '') : '',
+        sessionId: sessionId,
+        location: loc
+      };
+      if (isIn) {
+        totalIn++;
+        activeUsers.push(base);
+      } else if (isOut) {
+        totalOut++;
+        if (att && String(att[5] || '').trim()) {
+          var exitMs = new Date((normDate(att[6], t) || '') + 'T' + String(att[5] || '')).getTime();
+          if (exitMs && (now.getTime() - exitMs) <= 300000) recentlyExited.push(base);
+        }
+        offlineUsers.push(base);
+      } else {
+        offlineUsers.push(base);
+      }
+    });
+
+    var result = {
+      success: true,
+      sessionId: sessionId,
+      session: liveCtx.session || null,
+      totalIn: totalIn,
+      totalOut: totalOut,
+      activeUsers: activeUsers,
+      offlineUsers: offlineUsers,
+      recentlyExited: recentlyExited,
+      updatedAt: now.toISOString()
+    };
+    try { cache.put(cacheKey, JSON.stringify(result), 5); } catch (e) {}
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getLiveAttendance: ' + err };
+  }
+}
+
+function getUserLocations(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var liveCtx = resolveLiveSessionContext(b);
+    var sessionId = liveCtx.sessionId || '';
+    var liveState = getLiveStateInfo();
+    var cacheKey = liveCacheKey('locations', sessionId, liveState.version);
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+    var users = getCached(SH.USERS, TTL_LOOKUP);
+    var authMap = latestAuthSessionsByUser();
+    var locMap = latestLocationsByUser();
+    var rows = users.map(function(u) {
+      var uid = String(u.user_id || '').trim();
+      var loc = locMap[uid] || null;
+      var authRow = authMap[uid] || null;
+      return {
+        userId: uid,
+        name: u.full_name,
+        email: u.email,
+        department: u.department_id,
+        latitude: loc ? loc.latitude : '',
+        longitude: loc ? loc.longitude : '',
+        distanceFromCentre: loc ? loc.distanceFromCentre : '',
+        timestamp: loc ? loc.timestamp : '',
+        online: !!(authRow && authRow.last_seen_at && (Date.now() - new Date(authRow.last_seen_at).getTime()) <= 120000)
+      };
+    });
+    var result = { success: true, sessionId: sessionId, locations: rows, updatedAt: new Date().toISOString() };
+    try { cache.put(cacheKey, JSON.stringify(result), 5); } catch (e) {}
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getUserLocations: ' + err };
+  }
+}
+
+function getLiveUpdates(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var liveCtx = resolveLiveSessionContext(b);
+    var sessionId = liveCtx.sessionId || '';
+    var lastSyncTime = String((b && b.lastSyncTime) || '').trim();
+    var lastSyncMs = lastSyncTime ? new Date(lastSyncTime).getTime() : 0;
+    var waitMs = Math.min(parseInt((b && (b.waitMs || b.waitSeconds * 1000)) || 0, 10) || 0, 5000);
+    var result = {
+      success: true,
+      sessionId: sessionId,
+      updates: [],
+      liveAttendance: null,
+      locations: null,
+      syncedAt: new Date().toISOString()
+    };
+
+    function collectUpdates() {
+      var updates = [];
+      if (!lastSyncMs) return updates;
+      var auditRows = getRows(getSheet(SH.AUDIT_LOG));
+      auditRows.forEach(function(row) {
+        var ts = new Date(row.created_at || 0).getTime();
+        if (ts > lastSyncMs) {
+          updates.push({
+            type: 'audit',
+            action: row.event_type,
+            userId: row.actor_user_id,
+            targetUserId: row.target_user_id,
+            createdAt: row.created_at,
+            metadata: safeJsonParse(String(row.details || '{}')) || {}
+          });
+        }
+      });
+      var locRows = getRows(getSheet(SH.LOC_MONITOR));
+      locRows.forEach(function(row) {
+        var ts2 = new Date(row.timestamp || 0).getTime();
+        if (ts2 > lastSyncMs) {
+          updates.push({
+            type: 'location',
+            userId: row.user_id,
+            latitude: row.latitude,
+            longitude: row.longitude,
+            distanceFromCentre: row.distance_from_centre,
+            timestamp: row.timestamp
+          });
+        }
+      });
+      return updates;
+    }
+
+    var updates = collectUpdates();
+    if (!updates.length && waitMs > 0 && lastSyncMs) {
+      var startWait = Date.now();
+      var beforeVersion = getLiveStateInfo().version;
+      while ((Date.now() - startWait) < waitMs) {
+        Utilities.sleep(1000);
+        if (getLiveStateInfo().version !== beforeVersion) {
+          updates = collectUpdates();
+          break;
+        }
+      }
+    }
+
+    result.updates = updates.slice(0, 100);
+    result.liveAttendance = getLiveAttendance(b);
+    result.locations = getUserLocations(b);
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getLiveUpdates: ' + err };
+  }
+}
+
+function forceExitUser(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    if (!b.userId) return { success: false, message: 'userId required' };
+    var res = markExit({
+      userId: b.userId,
+      latitude: b.latitude || '',
+      longitude: b.longitude || '',
+      address: b.address || ''
+    });
+    appendAuditLog('force_exit_user', auth.session.user_id, auth.session.role_name, b.userId, {
+      sessionId: String((b && b.sessionId) || ''),
+      forced: true
+    });
+    touchLiveState('force_exit');
+    return res;
+  } catch (err) {
+    return { success: false, message: 'forceExitUser: ' + err };
+  }
+}
+
+function getAttendanceRowsForAnalytics() {
+  return getRows(getSheet(SH.ATTENDANCE));
+}
+
+function getDailyStats(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var t = tz();
+    var date = String((b && b.date) || Utilities.formatDate(new Date(), t, 'yyyy-MM-dd'));
+    var cacheKey = 'daily_stats_' + date;
+    var cached = getCachedData(cacheKey, 10);
+    if (cached) return cached;
+
+    var users = getCached(SH.USERS, TTL_LOOKUP).filter(function(u) {
+      return normalizeRoleValue(u.role_id) === 'student' || String(findRoleIdByName('student')) === String(u.role_id);
+    });
+    var rows = getAttendanceRowsForAnalytics();
+    var byUser = {};
+    var entryHours = Array(24).fill(0);
+    var exitHours = Array(24).fill(0);
+    var lateEntries = 0;
+    var earlyExits = 0;
+    var presentCount = 0;
+    var totalEntries = 0;
+    var sessionWindows = getAttendanceWindowRows().filter(function(w) {
+      return String(w.status || '').toLowerCase() === 'active';
+    });
+
+    rows.forEach(function(row) {
+      if (normDate(row[6], t) !== date) return;
+      var uid = String(row[1] || '').trim();
+      var status = String(row[13] || '').trim().toUpperCase();
+      var type = String(row[3] || '').trim().toLowerCase();
+      if (type !== 'entry' && status !== 'IN' && type !== 'exit' && status !== 'OUT') return;
+      var entryTime = String(row[4] || '').trim();
+      var exitTime = String(row[5] || '').trim();
+      if (entryTime) {
+        totalEntries++;
+        presentCount++;
+        var eh = parseInt(entryTime.split(':')[0], 10);
+        if (!isNaN(eh)) entryHours[eh] += 1;
+        byUser[uid] = byUser[uid] || {};
+        byUser[uid].entry = row;
+        var matchedWindow = findMatchingWindowForRow(row, sessionWindows, t);
+        if (matchedWindow && isLateEntry(row, matchedWindow, t)) lateEntries++;
+      }
+      if (exitTime) {
+        var xh = parseInt(exitTime.split(':')[0], 10);
+        if (!isNaN(xh)) exitHours[xh] += 1;
+        byUser[uid] = byUser[uid] || {};
+        byUser[uid].exit = row;
+        var matchedExitWindow = findMatchingWindowForRow(row, sessionWindows, t);
+        if (matchedExitWindow && isEarlyExit(row, matchedExitWindow, t)) earlyExits++;
+      }
+    });
+
+    var result = {
+      success: true,
+      date: date,
+      totalStudents: users.length,
+      totalPresent: Object.keys(byUser).length,
+      totalAbsent: Math.max(0, users.length - Object.keys(byUser).length),
+      avgAttendancePercent: users.length ? Math.round((Object.keys(byUser).length / users.length) * 1000) / 10 : 0,
+      lateEntries: lateEntries,
+      earlyExits: earlyExits,
+      entryTrend: entryHours,
+      exitTrend: exitHours,
+      updatedAt: new Date().toISOString()
+    };
+    setCachedData(cacheKey, result, 10);
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getDailyStats: ' + err };
+  }
+}
+
+function getWeeklyStats(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var t = tz();
+    var end = new Date();
+    end.setHours(23, 59, 59, 999);
+    var start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+    var cacheKey = 'weekly_stats_' + Utilities.formatDate(end, t, 'yyyy-MM-dd');
+    var cached = getCachedData(cacheKey, 10);
+    if (cached) return cached;
+
+    var users = getCached(SH.USERS, TTL_LOOKUP).filter(function(u) {
+      return normalizeRoleValue(u.role_id) === 'student' || String(findRoleIdByName('student')) === String(u.role_id);
+    });
+    var rows = getAttendanceRowsForAnalytics();
+    var days = [];
+    for (var i = 0; i < 7; i++) {
+      var dt = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
+      days.push(Utilities.formatDate(dt, t, 'yyyy-MM-dd'));
+    }
+    var byDay = {};
+    days.forEach(function(d) {
+      byDay[d] = { present: 0, late: 0, early: 0, entries: 0 };
+    });
+    rows.forEach(function(row) {
+      var d = normDate(row[6], t);
+      if (!byDay[d]) return;
+      var entryTime = String(row[4] || '').trim();
+      var exitTime = String(row[5] || '').trim();
+      if (entryTime) {
+        byDay[d].present += 1;
+        byDay[d].entries += 1;
+      }
+      var windows = getAttendanceWindowRows().filter(function(w) {
+        return String(w.status || '').toLowerCase() === 'active';
+      });
+      var matched = findMatchingWindowForRow(row, windows, t);
+      if (matched && entryTime && isLateEntry(row, matched, t)) byDay[d].late += 1;
+      if (matched && exitTime && isEarlyExit(row, matched, t)) byDay[d].early += 1;
+    });
+
+    var series = days.map(function(d) {
+      return {
+        date: d,
+        present: byDay[d].present,
+        late: byDay[d].late,
+        early: byDay[d].early,
+        attendancePercent: users.length ? Math.round((byDay[d].present / users.length) * 1000) / 10 : 0
+      };
+    });
+
+    var result = {
+      success: true,
+      range: { start: Utilities.formatDate(start, t, 'yyyy-MM-dd'), end: Utilities.formatDate(end, t, 'yyyy-MM-dd') },
+      totalStudents: users.length,
+      series: series,
+      updatedAt: new Date().toISOString()
+    };
+    setCachedData(cacheKey, result, 10);
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getWeeklyStats: ' + err };
+  }
+}
+
+function getUserAttendanceSummary(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var userId = String((b && (b.userId || b.targetUserId)) || '').trim();
+    if (!userId) return { success: false, message: 'userId required' };
+    var user = getUserById(userId);
+    if (!user) return { success: false, message: 'User not found' };
+    var t = tz();
+    var cacheKey = 'user_summary_' + userId;
+    var cached = getCachedData(cacheKey, 10);
+    if (cached) return cached;
+
+    var rows = getAttendanceRowsForAnalytics().filter(function(row) {
+      return String(row[1] || '').trim() === userId;
+    });
+    var totalDays = {};
+    var lateCount = 0;
+    var earlyCount = 0;
+    var presentCount = 0;
+    var records = [];
+    var windows = getAttendanceWindowRows().filter(function(w) {
+      return String(w.status || '').toLowerCase() === 'active';
+    });
+
+    rows.forEach(function(row) {
+      var date = normDate(row[6], t);
+      if (!date) return;
+      totalDays[date] = true;
+      var entryTime = String(row[4] || '').trim();
+      var exitTime = String(row[5] || '').trim();
+      var matched = findMatchingWindowForRow(row, windows, t);
+      if (entryTime) {
+        presentCount += 1;
+        if (matched && isLateEntry(row, matched, t)) lateCount += 1;
+      }
+      if (exitTime && matched && isEarlyExit(row, matched, t)) earlyCount += 1;
+      records.push({
+        date: date,
+        entryTime: entryTime,
+        exitTime: exitTime,
+        status: String(row[13] || '').trim().toUpperCase() || (exitTime ? 'OUT' : 'IN'),
+        loginMethod: row[7] || '',
+        locationId: row[10] || '',
+        distance: row[12] || ''
+      });
+    });
+
+    records.sort(function(a, b) { return b.date.localeCompare(a.date); });
+    var result = {
+      success: true,
+      userId: userId,
+      name: user.full_name,
+      email: user.email,
+      totalRecords: records.length,
+      presentCount: presentCount,
+      lateEntries: lateCount,
+      earlyExits: earlyCount,
+      attendancePercent: records.length ? Math.round((presentCount / records.length) * 1000) / 10 : 0,
+      recentRecords: records.slice(0, 20),
+      updatedAt: new Date().toISOString()
+    };
+    setCachedData(cacheKey, result, 10);
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getUserAttendanceSummary: ' + err };
+  }
+}
+
+function getAttendanceInsights(b) {
+  try {
+    var auth = requireAuth(b, ['teacher', 'admin']);
+    if (!auth.ok) return auth.error;
+    var t = tz();
+    var days = parseInt((b && b.days) || 14, 10);
+    if (isNaN(days) || days < 7) days = 14;
+    if (days > 60) days = 60;
+    var cacheKey = 'attendance_insights_' + days;
+    var cached = getCachedData(cacheKey, 10);
+    if (cached) return cached;
+
+    var users = getCached(SH.USERS, TTL_LOOKUP);
+    var rows = getAttendanceRowsForAnalytics();
+    var start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start = new Date(start.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+    var lateEntries = [];
+    var earlyExits = [];
+    var absenteeMap = {};
+    var windows = getAttendanceWindowRows().filter(function(w) {
+      return String(w.status || '').toLowerCase() === 'active';
+    });
+
+    rows.forEach(function(row) {
+      var rowDateStr = normDate(row[6], t);
+      var rowDate = rowDateStr ? new Date(rowDateStr + 'T00:00:00') : null;
+      if (!rowDate || rowDate < start) return;
+      var uid = String(row[1] || '').trim();
+      var user = getUserById(uid) || { full_name: uid, email: '' };
+      var matched = findMatchingWindowForRow(row, windows, t);
+      if (matched && isLateEntry(row, matched, t) && String(row[4] || '').trim()) {
+        lateEntries.push({
+          userId: uid,
+          name: user.full_name,
+          date: rowDateStr,
+          entryTime: row[4] || '',
+          locationId: row[10] || ''
+        });
+      }
+      if (matched && isEarlyExit(row, matched, t) && String(row[5] || '').trim()) {
+        earlyExits.push({
+          userId: uid,
+          name: user.full_name,
+          date: rowDateStr,
+          exitTime: row[5] || '',
+          locationId: row[10] || ''
+        });
+      }
+      absenteeMap[uid] = absenteeMap[uid] || {};
+      absenteeMap[uid][rowDateStr] = true;
+    });
+
+    var frequentAbsentees = users.map(function(u) {
+      var uid = String(u.user_id || '').trim();
+      var missed = 0;
+      for (var i = 0; i < days; i++) {
+        var dt = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
+        var d = Utilities.formatDate(dt, t, 'yyyy-MM-dd');
+        if (!absenteeMap[uid] || !absenteeMap[uid][d]) missed += 1;
+      }
+      return { userId: uid, name: u.full_name, email: u.email, absentDays: missed };
+    }).sort(function(a, b) { return b.absentDays - a.absentDays; }).slice(0, 10);
+
+    var result = {
+      success: true,
+      days: days,
+      lateEntries: lateEntries.slice(0, 20),
+      earlyExits: earlyExits.slice(0, 20),
+      frequentAbsentees: frequentAbsentees,
+      updatedAt: new Date().toISOString()
+    };
+    setCachedData(cacheKey, result, 10);
+    return result;
+  } catch (err) {
+    return { success: false, message: 'getAttendanceInsights: ' + err };
+  }
+}
+
+function parseClockMinutes(value) {
+  var parts = String(value || '').trim().split(':');
+  if (parts.length < 2) return null;
+  var h = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function findMatchingWindowForRow(row, windows, tzName) {
+  var rowDate = normDate(row[6], tzName || tz());
+  if (!rowDate) return null;
+  var locId = String(row[10] || '').trim();
+  if (!windows || !windows.length) return null;
+  for (var i = 0; i < windows.length; i++) {
+    var w = windows[i];
+    var windowLoc = String(w.location_id || '').trim();
+    if (windowLoc && locId && windowLoc !== locId) continue;
+    var startTime = String(w.start_time || '').trim();
+    var endTime = parseWindowEndTime(w);
+    if (!startTime || !endTime) continue;
+    return {
+      startMin: parseClockMinutes(startTime),
+      endMin: parseClockMinutes(endTime),
+      startTime: startTime,
+      endTime: endTime
+    };
+  }
+  return null;
+}
+
+function isLateEntry(row, windowInfo) {
+  if (!windowInfo) return false;
+  var entryTime = String(row[4] || '').trim();
+  var entryMin = parseClockMinutes(entryTime);
+  if (entryMin === null || windowInfo.startMin === null) return false;
+  return entryMin > (windowInfo.startMin + 5);
+}
+
+function isEarlyExit(row, windowInfo) {
+  if (!windowInfo) return false;
+  var exitTime = String(row[5] || '').trim();
+  var exitMin = parseClockMinutes(exitTime);
+  if (exitMin === null || windowInfo.endMin === null) return false;
+  return exitMin < (windowInfo.endMin - 5);
 }
 
 // ============================================================

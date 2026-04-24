@@ -1,0 +1,57 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-ink bg-page-glow font-sans text-textMain antialiased;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(255,255,255,.02) 0%, transparent 20%, transparent 80%, rgba(255,255,255,.02) 100%);
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+input,
+select,
+textarea {
+  @apply w-full rounded-2xl border border-line bg-panelSoft px-4 py-3 text-sm text-textMain outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/10;
+}
+
+button {
+  @apply transition;
+}
+
+.shell {
+  @apply mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8;
+}
+
+.frame {
+  @apply rounded-frame border border-line bg-panel shadow-frame;
+}
+
+.pill {
+  @apply inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-medium text-accent;
+}
+
+.section-title {
+  @apply mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-textMuted;
+}
