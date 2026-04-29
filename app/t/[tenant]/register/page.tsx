@@ -1,8 +1,9 @@
 import { RegisterShell } from "@/components/auth/register-shell";
 import { requireTenantFromSlug } from "@/lib/tenant/resolve";
 
-export default function TenantRegisterPage({ params }: { params: { tenant: string } }) {
-  const tenant = requireTenantFromSlug(params.tenant);
+export default async function TenantRegisterPage({ params }: { params: Promise<{ tenant: string }> }) {
+  const { tenant: slug } = await params;
+  const tenant = requireTenantFromSlug(slug);
 
   return (
     <main className="shell">
