@@ -1,13 +1,11 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { TenantConfig } from "@/lib/tenant/config";
-import { getTenantSupabasePublicConfig } from "@/lib/supabase/tenant-client";
+import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
 
-export function createClient(tenant: TenantConfig) {
+export function createClient() {
   const cookieStore = cookies();
-  const config = getTenantSupabasePublicConfig(tenant);
 
-  return createServerClient(config.url, config.anonKey, {
+  return createServerClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value;

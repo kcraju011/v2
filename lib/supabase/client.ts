@@ -1,8 +1,8 @@
 "use client";
 
-import type { TenantConfig } from "@/lib/tenant/config";
-import { createTenantBrowserClient } from "@/lib/supabase/tenant-client";
+import { createBrowserClient } from "@supabase/ssr";
+import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
 
-export function createClient(tenant: TenantConfig) {
-  return createTenantBrowserClient(tenant);
+export function createClient() {
+  return createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey());
 }
